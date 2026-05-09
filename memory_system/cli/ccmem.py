@@ -200,6 +200,169 @@ def _make_byte_budget(max_bytes: int):
     return writer, state
 
 
+# ────────────────────────────────────────────────────────────────────────────
+# CC 原始 transcript 检索（--raw 模式）
+# memories/ 里只是 GLM 摘要；CC 自己把每个 session 的完整对话写在
+# ~/.claude/projects/<encoded-cwd>/<session-uuid>.jsonl，要看原话就读这个。
+# ────────────────────────────────────────────────────────────────────────────
+
+CC_PROJECTS_DIR = Path.home() / ".claude" / "projects"
+
+
+def _find_jsonl_for_session(session_id: str) -> Path | None:
+    if not session_id or not CC_PROJECTS_DIR.is_dir():
+        return None
+    for p in CC_PROJECTS_DIR.rglob(f"{session_id}.jsonl"):
+        if p.is_file():
+            return p
+    return None
+
+
+def _extract_jsonl_message_parts(content: Any) -> tuple[str, list[str], list[str]]:
+    """从 jsonl 的 message.content 抽 (text, tool_uses, tool_results)。"""
+    if content is None:
+        return "", [], []
+    if isinstance(content, str):
+        return content.strip(), [], []
+    if not isinstance(content, list):
+        return str(content), [], []
+    texts: list[str] = []
+    tool_uses: list[str] = []
+    tool_results: list[str] = []
+    for item in content:
+        if not isinstance(item, dict):
+            continue
+        t = item.get("type")
+        if t == "text" and isinstance(item.get("text"), str):
+            texts.append(item["text"])
+        elif t == "tool_use":
+            name = item.get("name", "?")
+            inp = item.get("input") or {}
+            hint = ""
+            if isinstance(inp, dict):
+                for k in ("file_path", "path", "notebook_path", "command", "pattern", "query"):
+                    v = inp.get(k)
+                    if isinstance(v, str) and v:
+                        hint = v[:120]
+                        break
+            tool_uses.append(f"{name}: {hint}" if hint else name)
+        elif t == "tool_result":
+            tc = item.get("content")
+            if isinstance(tc, list):
+                tc = next(
+                    (x.get("text", "") for x in tc
+                     if isinstance(x, dict) and x.get("type") == "text"),
+                    "",
+                )
+            if isinstance(tc, str) and tc:
+                tool_results.append(tc[:240])
+    return "\n".join(texts).strip(), tool_uses, tool_results
+
+
+def iter_jsonl_messages(path: Path):
+    """yield {role, ts, text, tool_uses, tool_results, blob} for user/assistant lines."""
+    try:
+        f = path.open(encoding="utf-8")
+    except OSError:
+        return
+    with f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                obj = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            kind = obj.get("type")
+            if kind not in ("user", "assistant"):
+                continue
+            msg = obj.get("message") or {}
+            if not isinstance(msg, dict):
+                continue
+            text, tool_uses, tool_results = _extract_jsonl_message_parts(msg.get("content"))
+            if not text and not tool_uses and not tool_results:
+                continue
+            blob_parts = [text] + tool_uses + tool_results
+            yield {
+                "role": (msg.get("role") or kind),
+                "ts": obj.get("timestamp") or "",
+                "text": text,
+                "tool_uses": tool_uses,
+                "tool_results": tool_results,
+                "blob": "\n".join(blob_parts),
+            }
+
+
+def _render_jsonl_message(m: dict[str, Any], include_tool_results: bool = False) -> str:
+    ts = (m["ts"] or "")[:19].replace("T", " ")
+    role = str(m["role"]).upper()
+    lines = [f"[{role} {ts}]"]
+    if m["text"]:
+        lines.append(m["text"])
+    for tu in m["tool_uses"]:
+        lines.append(f"  [tool: {tu}]")
+    if include_tool_results:
+        for tr in m["tool_results"][:2]:
+            tr_short = tr.replace("\n", " ⏎ ")[:240]
+            lines.append(f"  [tool_result: {tr_short}]")
+    return "\n".join(lines)
+
+
+def _render_session_raw(
+    fm: dict[str, Any],
+    md_path: Path,
+    write,
+    state,
+    query: re.Pattern[str] | None = None,
+    include_tool_results: bool = False,
+) -> bool:
+    """Render one session's CC raw transcript through byte-budget writer.
+    Returns True if anything got printed (jsonl found and at least one message
+    survived filter); False otherwise."""
+    sid = fm.get("session_id")
+    sid = sid if isinstance(sid, str) else ""
+    cwd = fm.get("cwd") if isinstance(fm.get("cwd"), str) else ""
+    line = "=" * 40
+    write(line)
+    write(f"📌 CC 原始 transcript · session={sid[:8]}")
+    write(line)
+    write(f"Session ID: {sid}")
+    write(f"cwd: {cwd}")
+    write(f"摘要 md: {md_path}")
+    if not sid:
+        write("⚠️  frontmatter 没有 session_id，跳过")
+        return False
+    jsonl = _find_jsonl_for_session(sid)
+    if jsonl is None:
+        write(f"⚠️  ~/.claude/projects/ 没找到 {sid}.jsonl（可能已被剪枝）")
+        return False
+    write(f"jsonl: {jsonl}")
+    write()
+
+    rendered = 0
+    for m in iter_jsonl_messages(jsonl):
+        if state["exceeded"]:
+            break
+        if query is not None and not query.search(m["blob"]):
+            continue
+        write(_render_jsonl_message(m, include_tool_results=include_tool_results))
+        write()
+        rendered += 1
+
+    if rendered == 0:
+        if query is not None:
+            write("(no match in this session's raw transcript)")
+        else:
+            write("(jsonl is empty or has no user/assistant messages)")
+    else:
+        write(line)
+        write(f"✅ 共 {rendered} 条 user/assistant 消息" +
+              (f"（命中关键词）" if query is not None else ""))
+        write(line)
+    return rendered > 0
+
+
 def _print_summary_line(p: Path) -> None:
     fm = parse_frontmatter(p)
     sid = (fm.get("session_id") or "?")
@@ -467,20 +630,26 @@ def cmd_find(args: argparse.Namespace) -> int:
         pattern = re.compile(re.escape(args.query), re.IGNORECASE | re.MULTILINE)
 
     target_cwd = None if args.all_ else _normalize_path(os.getcwd())
+    raw_mode = bool(getattr(args, "raw", False))
 
+    # raw 模式：不依赖摘要内容命中——把 cwd 范围内全部 session 都喂进去，
+    # 让 _render_session_raw 在 jsonl 内部 grep。
     pairs: list[tuple[Path, dict[str, Any], str]] = []
     for p in iter_memories():
+        fm = parse_frontmatter(p)
         if target_cwd:
-            fm = parse_frontmatter(p)
             mc = fm.get("cwd")
             if not (isinstance(mc, str) and _cwd_matches(mc, target_cwd)):
                 continue
+        if raw_mode:
+            pairs.append((p, fm, ""))
+            continue
         try:
             text = p.read_text(encoding="utf-8")
         except Exception:
             continue
         if pattern.search(text):
-            pairs.append((p, parse_frontmatter(p), text))
+            pairs.append((p, fm, text))
 
     if not pairs:
         scope = "当前项目" if target_cwd else "全局"
@@ -501,12 +670,36 @@ def cmd_find(args: argparse.Namespace) -> int:
     total = len(pairs)
     scope_label = "全局" if not target_cwd else f"当前项目 {target_cwd}"
     write, state = _make_byte_budget(args.max_bytes)
-    write(f"# 关键词 {args.query!r} 命中 {total} 条 session（范围: {scope_label}）")
-    if args.section_only:
+    if raw_mode:
+        write(f"# 关键词 {args.query!r} · raw 模式（在 CC 原始 jsonl 里搜，"
+              f"扫描 {total} 个候选 session · 范围: {scope_label}）")
+    else:
+        write(f"# 关键词 {args.query!r} 命中 {total} 条 session（范围: {scope_label}）")
+    if args.section_only and not raw_mode:
         write(f"# 模式: --section-only（只显示命中关键词的轮次段）")
     if args.max_bytes > 0:
         write(f"# 预算: --max-bytes {args.max_bytes}")
     printed = 0
+
+    if raw_mode:
+        include_tr = bool(getattr(args, "include_tool_results", False))
+        for p, fm, _ in pairs:
+            if state["exceeded"]:
+                break
+            ok = _render_session_raw(fm, p, write, state,
+                                     query=pattern, include_tool_results=include_tr)
+            if ok:
+                printed += 1
+            write()
+        if printed == 0:
+            write(f"(no match for {args.query!r} in raw transcripts · 扫描了 {total} 个 session)")
+            return 1
+        if state["exceeded"]:
+            write(f"⚠️  已达 --max-bytes {args.max_bytes} 预算"
+                  f"（已输出 ~{state['bytes']} bytes，剩余 session 跳过）")
+        write("✅ 以上是 CC 原始 transcript 的命中片段（仅作背景参考）")
+        return 0
+
     for i, (p, fm, text) in enumerate(pairs, 1):
         if state["exceeded"]:
             break
@@ -592,7 +785,25 @@ def cmd_last_session(args: argparse.Namespace) -> int:
     write, state = _make_byte_budget(args.max_bytes)
     if args.max_bytes > 0:
         write(f"# 预算: --max-bytes {args.max_bytes}")
+    if getattr(args, "raw", False):
+        write(f"# 模式: --raw（绕过 GLM 摘要，直接读 CC 原始 jsonl）")
     printed = 0
+
+    # --raw 模式：跳过 md 摘要正文，改读 ~/.claude/projects/<sid>.jsonl
+    if getattr(args, "raw", False):
+        include_tr = bool(getattr(args, "include_tool_results", False))
+        for p, fm in pairs:
+            if state["exceeded"]:
+                break
+            ok = _render_session_raw(fm, p, write, state,
+                                     query=None, include_tool_results=include_tr)
+            if ok:
+                printed += 1
+            write()
+        if state["exceeded"] and printed < total:
+            write(f"⚠️  已达 --max-bytes {args.max_bytes} 预算"
+                  f"（已输出 ~{state['bytes']} bytes，省略 {total - printed} 个 session）")
+        return 0
 
     for i, (p, fm) in enumerate(pairs, 1):
         if state["exceeded"]:
@@ -724,6 +935,10 @@ def build_parser() -> argparse.ArgumentParser:
     psess.add_argument("--cwd", help="覆盖默认 pwd")
     psess.add_argument("--max-bytes", type=int, default=0,
                        help="输出字节预算上限（跨 session 累计），超出后跳过剩余 session 并提示；0=无限")
+    psess.add_argument("--raw", action="store_true",
+                       help="绕过 GLM 摘要，直接读 CC 写在 ~/.claude/projects/ 的原始 jsonl 对话")
+    psess.add_argument("--include-tool-results", action="store_true",
+                       help="raw 模式下连工具调用结果也打出来（默认只显示 user/assistant 文本+工具名）")
     psess.set_defaults(func=cmd_last_session)
 
     pf = sub.add_parser("find",
@@ -736,6 +951,10 @@ def build_parser() -> argparse.ArgumentParser:
                     help="只输出命中关键词的 ## 轮次 段，省略未命中段（大幅节省 context）")
     pf.add_argument("--max-bytes", type=int, default=0,
                     help="输出字节预算上限（跨 session 累计），超出后停止并提示；0=无限")
+    pf.add_argument("--raw", action="store_true",
+                    help="在 CC 原始 jsonl 里搜（细节比 GLM 摘要全得多；用于查具体原话/参数/错误）")
+    pf.add_argument("--include-tool-results", action="store_true",
+                    help="raw 模式下连工具调用结果也打出来")
     pf.set_defaults(func=cmd_find)
 
     return p
