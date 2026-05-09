@@ -1,0 +1,24 @@
+# cc-memory · 不要把以下东西进 git
+
+# 本地会话记忆（私密保存）—— 整个目录都不进 repo
+# 因为目录里可能挂着独立的 git repo（用户私存记忆用），只保留 .gitkeep 占位
+memories/
+!memories/.gitkeep
+
+# 日志（实际跑在 ~/.config/cc-memory/logs/，这里只是兜底）
+*.log
+logs/
+
+# 配置文件可能误放进来时兜底
+**/config.json
+!memory_system/config/config.example.json
+
+# Python / 编辑器临时文件
+__pycache__/
+*.pyc
+.DS_Store
+.idea/
+.vscode/
+
+# tmp payload
+ccmem-payload.*

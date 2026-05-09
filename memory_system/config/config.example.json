@@ -1,0 +1,18 @@
+{
+  "_comment": "复制到 ~/.config/cc-memory/config.json 后填入真实 api_key，并 chmod 600。",
+  "api_key": "YOUR_Z_AI_API_KEY_HERE",
+  "endpoint": "https://api.z.ai/api/anthropic/v1/messages",
+  "_endpoint_comment": "z.ai Anthropic Messages 兼容端点。worker 的 GLM 调用用这套 schema（x-api-key + anthropic-version）。OpenAI-compat /api/paas/v4/chat/completions 在 z.ai 是独立计费，资源包没买就 1113。",
+  "model": "glm-5-turbo",
+  "_model_comment": "glm-5-turbo / glm-5 / glm-5.1 都跑得通；4.5-flash 免费但摘要质量打折。",
+  "temperature": 0.3,
+  "max_tokens": 400,
+  "_max_tokens_comment": "轻量记录模板（用户提问+最终结果+关键词），400 token 够。如果模板恢复成详细总结需要调高。",
+  "request_timeout_seconds": 60,
+  "memories_dir": null,
+  "_memories_dir_comment": "null = 自动用 <install>/memories；也可手动设成绝对路径（比如 ~/.cc-memory/memories）",
+  "transcript_truncate_chars": 60000,
+  "max_db_size_mb": 200,
+  "_max_db_size_comment": "memories/ 目录的总容量上限。每次写入新记忆后会自动检查；超出按 frontmatter 的 timestamp FIFO 剪枝到 90% 以下。最新 10 条始终保留。设 0 关闭。",
+  "language": "zh"
+}
