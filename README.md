@@ -1,173 +1,145 @@
-# CC project memory
+# cc-memory
 
-一套为 Claude Code 设计的轻量级会话记忆系统。**Claude 每回完一轮**通过 `Stop` hook 触发，
-**用 GLM (z.ai) API 总结这一轮**（省 token），**完全后台异步**不阻塞 CC，**append 到当 session 的 md 文件**。
-**不在 SessionStart 自动加载**，需要时通过 `/recall` 搜索或 `/sess` 加载上一次 session 全文。
+> 🌐 **English** · [中文](./README.zh.md)
 
-> 📦 **想直接装？** 看 [INSTALL.md](./INSTALL.md) — 推荐"让 Claude Code 自己装"路径，3 分钟完事。
+A lightweight per-turn session memory system for Claude Code. After every Claude turn, a `Stop` hook fires, a detached Python worker calls the **GLM API at z.ai** to summarize that turn (cheap), and appends it to a per-session markdown file. Nothing auto-loads on the next session — you pull memory in **explicitly** via `/sess` or by saying things like *"what was the original wording last time?"* (the `sess` skill auto-triggers `--raw` mode).
 
-设计灵感来自 [thedotmack/claude-mem](https://github.com/thedotmack/claude-mem)，但做了三处简化 + 一处不同：
+> 📦 **Want to install?** See [INSTALL.md](./INSTALL.md) — recommended path: *let Claude Code install it for you*, ~3 minutes.
 
-| 维度 | claude-mem | 本项目 |
+![Architecture](./docs/images/architecture.png)
+
+## Why these tradeoffs
+
+![Philosophy](./docs/images/philosophy.png)
+
+Inspired by [thedotmack/claude-mem](https://github.com/thedotmack/claude-mem), with two intentional differences:
+
+| Dimension | claude-mem | cc-memory |
 |---|---|---|
-| Hook 数量 | 5 个（SessionStart/UserPromptSubmit/PostToolUse/Stop/SessionEnd） | 1 个（**仅 Stop，每轮 append**）|
-| 写入时机 | session 期间持续观察 | **每轮一次写入**，CC 怎么挂都最多丢未完成那轮 |
-| 总结引擎 | Claude agent-sdk | **z.ai GLM API**（省 token） |
-| 启动注入 | SessionStart 自动注入历史 | **不注入**，手动 `/recall` 或 `/sess` |
-| 存储 | SQLite + Chroma 向量库 | **markdown 文件 + grep** |
+| Hook count | 5 (SessionStart / UserPromptSubmit / PostToolUse / Stop / SessionEnd) | **1 (Stop, per-turn append)** |
+| Write timing | Continuous observation during session | **Once per turn** — at most loses the unfinished last turn |
+| Summary engine | Claude agent-sdk | **z.ai GLM API** (cheap) |
+| SessionStart auto-inject | Yes | **No** — manual `/sess` or `/recall` |
+| Storage | SQLite + Chroma vector DB | **Markdown files + grep** |
 
-## 为什么这样设计（两个反共识取舍）
+### 1. No cross-project memory by default ❌
 
-claude-mem 是个完整的方案，但它的两个招牌功能我刻意**没有做**——不是技术做不到，是不认同那是好的默认行为。
+claude-mem's vector DB does "search across all projects" semantic retrieval — sounds cool. But people who actually use Claude Code seriously already organize their work per-project (each has its own `CLAUDE.md`, docs, code). Cross-project search retrieves mostly **false-positive** signals (keyword collisions, same-name-different-meaning concepts) that dilute the current project's signal.
 
-### 1. 不做跨项目记忆 ❌
+→ cc-memory isolates by `cwd` by default. `/sess` and `/recall` look in the current project first; `--all` extends globally. **No assumption that you need cross-project context.**
 
-claude-mem 用 SQLite + 向量库支持"跨所有项目"的语义检索，听起来很酷。
+### 2. No SessionStart auto-inject ❌
 
-但**真正会用 CC 的人本身就会做好项目管理**——每个项目都有自己的 `CLAUDE.md`、自己的文档、自己的代码。跨项目搜索捞回来的，更多是**伪相关**的信号（关键词撞车、概念名字一样实质不同），反而稀释当前项目的判断。
+claude-mem stuffs the previous session's summary into the context window every time you start a new session. **But context window is a scarce resource.** Not every session needs the previous one's history. Auto-injection means paying a "context-you-might-not-need" tax every single time, diluting the current task's signal; in long conversations this tax forces premature compaction, losing more important info.
 
-→ 本项目默认按 `cwd` 隔离记忆。`/sess`、`/recall` 优先在当前项目里找，加 `--all` 才扩到全局。**不预设"你需要跨项目"**。
+Worse, it **takes the judgment away from you**: even *"do I want history this time"* gets decided for you.
 
-### 2. 不在 SessionStart 自动注入历史 ❌
+→ cc-memory makes loading **explicit**: writes are background-automatic (per-turn append), but reads you trigger — `/sess` to continue from last time, `/sess <keyword>` to dig up a topic. When you don't need it, memories sit quietly on disk.
 
-claude-mem 每次开新会话时，自动把上一次 session 的摘要塞进 context window。
+These two tradeoffs in one line: **Write should be automatic and cheap; read should be explicit and controlled.**
 
-**但 context window 是稀缺资源**——不是每次开会话都需要上次的历史背景。自动注入意味着每次都默认付一笔"可能用不上的上下文"的税，稀释当前任务的信号；当对话足够长，这笔税会逼着你提前 compact，反而损失更重要的信息。
+## Two-layer storage
 
-更糟的是它**剥夺了用户的判断**：连"要不要带历史"都替你决定了。
+cc-memory writes its own GLM summaries; **Claude Code itself separately writes the full raw transcript** (its `/resume` and `/continue` features depend on this). cc-memory's `--raw` mode reads that.
 
-→ 本项目把"加载历史"做成**显式动作**：写入是后台自动的（每轮 append），但读取由你主动触发——`/sess` 接着上次聊，`/sess <keyword>` 查具体话题，不需要就让记忆静静躺在磁盘上。
+| Layer | Where | Format | Per turn | Read via |
+|---|---|---|---|---|
+| GLM summary (lossy, fast) | `<repo>/memories/YYYY-MM-DD-<sid>.md` | markdown + frontmatter | ~300 chars | `ccmem find / last-session`, `/sess` |
+| CC raw transcript (lossless, large) | `~/.claude/projects/<encoded-cwd>/<sid>.jsonl` | line-delimited JSON | full text + tool I/O | `ccmem ... --raw`; `/sess` auto-triggers `--raw` on phrases like *"exact wording / specifics / details"* |
 
----
+The raw transcripts grow unboundedly (Claude Code never trims them). cc-memory ships `memory_system/bin/prune_cc_transcripts.py` to cap `~/.claude/projects/` at 3 GB (configurable), oldest first, protecting files modified in the last 24 h.
 
-这两个取舍合起来就一句话：**写入应该自动且廉价，读取应该显式且可控**。
+## Quick start
 
-## 目录结构
+See [INSTALL.md](./INSTALL.md) for the full guide. TL;DR:
+
+```bash
+git clone https://github.com/Zane456/cc-project-memory.git
+cd cc-project-memory
+./memory_system/bin/setup.sh --global --key <your-z.ai-key>
+```
+
+CLI cheatsheet:
+
+```bash
+python3 memory_system/cli/ccmem.py last-session              # last session in current project (summary)
+python3 memory_system/cli/ccmem.py last-session --raw        # ... but read CC's raw .jsonl instead
+python3 memory_system/cli/ccmem.py find "<keyword>"          # search current project's summaries
+python3 memory_system/cli/ccmem.py find "<keyword>" --raw    # search the raw .jsonl directly
+python3 memory_system/cli/ccmem.py find "<keyword>" --all    # extend to global
+python3 memory_system/cli/ccmem.py stats                     # disk usage
+python3 memory_system/cli/ccmem.py prune                     # manual FIFO prune of summaries
+
+python3 memory_system/bin/prune_cc_transcripts.py --dry-run  # cap ~/.claude/projects at 3 GB
+```
+
+In Claude Code:
+
+- `/sess` — load last session in current project
+- `/sess <keyword>` — search summaries for that keyword
+- *"what was the exact wording last time?"* — the `sess` skill detects detail-seeking phrases and switches to `--raw`
+
+## Repository layout
 
 ```
 .
-├── .claude/
-│   ├── settings.json           # SessionEnd hook 配置
-│   └── commands/recall.md      # /recall slash 命令
+├── INSTALL.md                            # install guide (recommended entry)
+├── DESIGN.md                             # full architecture spec
 ├── memory_system/
 │   ├── hooks/
-│   │   ├── session_end.sh      # bash 拆离器（≈10ms 返回）
-│   │   └── summarize.py        # python worker（调 GLM、写 md）
-│   ├── cli/ccmem.py            # 检索 CLI
-│   ├── config/config.example.json
-│   ├── bin/setup.sh            # 一次性安装脚本
-│   └── README.md
-├── memories/                    # 总结产物（已 .gitignore）
-└── DESIGN.md                    # 完整设计方案
+│   │   ├── session_end.sh                # bash detacher (~10 ms return)
+│   │   └── summarize.py                  # python worker (GLM call, md append)
+│   ├── cli/ccmem.py                      # retrieval CLI
+│   ├── bin/
+│   │   ├── setup.sh                      # one-shot installer
+│   │   └── prune_cc_transcripts.py       # cap ~/.claude/projects at 3 GB
+│   └── config/config.example.json
+├── skills/                               # ~/.claude/skills/ mirror (template)
+│   ├── README.md                         # install / sync instructions
+│   └── sess/SKILL.md                     # /sess language-trigger skill
+├── memories/                             # GLM summaries (gitignored)
+└── docs/images/                          # the diagrams above
 ```
 
-## 快速开始
+## Key design decisions
 
-### 1. 安装配置（一次性）
-
-**推荐：全局安装**（在任意项目目录跑 CC 都生效）：
-
-```bash
-cd /path/to/cc-project-memory     # 你 clone 这个 repo 后的位置
-./memory_system/bin/setup.sh --global --key <你的-z.ai-key>
-```
-
-这会：
-- 创建 `~/.config/cc-memory/config.json`（默认 `model = glm-5-turbo`、`thinking_enabled = false`、自动注入 `memories_dir`），`chmod 600`
-- 把 Stop hook 段 **merge** 到 `~/.claude/settings.json`（保留你已有的 hook / permissions 不破坏；旧文件备份成 `.bak`）
-- 把 `recall.md` / `sess.md` 复制到 `~/.claude/commands/`（用 cc-memory 的安装绝对路径，跨项目可用）
-- 给 hook / cli 设可执行位
-
-**仅项目级**（不带 `--global`）：hook 只注册在本项目的 `.claude/settings.json`，离开本目录就没记忆。适合"只想给一个项目用"的场景。
-
-**自定义 memories 目录**：加 `--memories-dir ~/cc-memory-data` 把记忆写到别处。
-
-**卸载全局 hook**：
-
-```bash
-./memory_system/bin/setup.sh --unregister-global
-```
-
-会把 cc-memory 的 hook 段从 `~/.claude/settings.json` 干净移除，保留你其它的 hook / permissions 不动。slash 命令文件和 `~/.config/cc-memory/` 配置不动，要彻底清需要手动 `rm`。
-
-**已存在配置时**：脚本不覆盖，展示当前 model / thinking_enabled / memories_dir，提示加 `--force` 才重新生成（会备份 `.bak`，自定义字段保留）。
-
-想换 model / endpoint / 打开 thinking 直接编辑 `~/.config/cc-memory/config.json` 即可。
-
-### 2. 验证 hook 已注册
-
-在这个目录里启动一次 Claude Code：
-
-```bash
-claude
-# ……聊几轮……
-# /exit
-```
-
-退出后等几秒，看：
-
-```bash
-ls -la ~/.config/cc-memory/logs/    # 应该有 worker.log
-ls -la ./memories/                  # 应该有 2026-05-09-xxxxxx.md
-```
-
-### 3. 检索
-
-CLI：
-
-```bash
-python3 ./memory_system/cli/ccmem.py list -n 10              # 列最近 N 条（全局）
-python3 ./memory_system/cli/ccmem.py here                    # 当前项目目录的记忆
-python3 ./memory_system/cli/ccmem.py search "GLM endpoint"   # 全局正则搜索
-python3 ./memory_system/cli/ccmem.py search "GLM" --here     # cwd-scoped 搜索
-python3 ./memory_system/cli/ccmem.py show 8a4b3c2d           # 看一条全文
-python3 ./memory_system/cli/ccmem.py latest                  # 最新一条全文
-python3 ./memory_system/cli/ccmem.py last-session            # 当前项目最近 1 条，带 LLM-friendly 边界
-python3 ./memory_system/cli/ccmem.py stats                   # 总条数 / 占用 / 上限
-python3 ./memory_system/cli/ccmem.py prune                   # 手动剪枝
-```
-
-或者在 Claude Code 里：
-
-```
-/recall GLM endpoint        # cwd 范围搜索；加 --all 切全局
-/sess                       # 加载当前项目最近一次会话作为上下文
-```
-
-## 关键设计决策
-
-| 问题 | 选择 | 理由 |
+| Question | Choice | Why |
 |---|---|---|
-| Stop vs SessionEnd | **Stop（每轮 append）** | 增量、可靠：CC 关窗 / Cmd+Q / 崩溃都最多丢"未完成的最后一轮"。SessionEnd 反而不一定触发（见 DESIGN §3）|
-| 死循环防护 | 检测 `stop_hook_active=true` 就 return | 避免 hook 自身引发的 Stop 再触发 worker 无限套娃（CC 文档明确警告）|
-| 阻塞 vs 异步 | `nohup setsid python3 ... & disown` | bash 立即 exit 0，python 独立会话继续跑 |
-| 同步还是 stdin pipe | 写 tmpfile 传参 | pipe 在父进程退出时会断，文件最稳 |
-| 文件并发 | `fcntl.flock(LOCK_EX)` | 两个 Stop 几乎同时触发也不会相互覆盖 |
-| 存储格式 | markdown + frontmatter（一 session 一文件，多轮次段）| grep 友好，人眼可读，无依赖 |
-| 容量上限 | `max_db_size_mb=200`，FIFO 剪枝到 90%，**最新 10 条永不删** | 防止长期累积爆盘 |
-| 配置位置 | `~/.config/cc-memory/config.json` | 用户私有，不进 repo |
-| 失败处理 | GLM 失败 → append 一段 `## ⚠️ GLM 失败` 到当 session 文件 | 永远 `exit 0`，不影响 CC |
+| `Stop` vs `SessionEnd` hook | **Stop** (per-turn append) | Incremental, reliable: window close / `Cmd+Q` / crash all lose at most the unfinished last turn. `SessionEnd` is not always triggered (see DESIGN §3). |
+| Loop protection | Detect `stop_hook_active=true` and exit | Prevent hook from self-triggering Stop infinitely (CC docs warn explicitly). |
+| Blocking vs async | `nohup setsid python3 ... & disown` | Bash exits immediately (~10 ms); Python keeps running detached. |
+| Tmpfile vs stdin pipe | Tmpfile | Pipes break when parent exits; tmpfile is robust. |
+| File concurrency | `fcntl.flock(LOCK_EX)` | Two near-simultaneous Stops can't overwrite each other. |
+| Storage format | Markdown + frontmatter (one session = one file with multiple turn sections) | grep-friendly, human-readable, no dependencies. |
+| Summary length | ~300 chars / turn (`max_tokens=600`) | Detailed enough that another model can read just the summary and know what happened, including failed attempts. |
+| Capacity cap | `max_db_size_mb=200`, FIFO prune to 90 %, **never delete the newest 10** | Prevent unbounded disk growth. |
+| Config location | `~/.config/cc-memory/config.json` (chmod 600) | User-private, not in repo. |
+| Failure handling | GLM error → log to `~/.config/cc-memory/failures/`, never propagate to CC | Always `exit 0`. |
 
-## 安全
+## Security
 
-- **API key 不入 git**：存在 `~/.config/cc-memory/config.json`，权限 600；`.gitignore` 也兜底忽略 `config.json`
-- **memories 默认不入 git**（`.gitignore` 排除 `*.md`）；如要团队共享，手动调整
-- **日志不含 key**，但建议定期清理 `~/.config/cc-memory/logs/`
+- **API key never enters git**: stored in `~/.config/cc-memory/config.json` (chmod 600); `.gitignore` also catches `**/config.json` as a safety net.
+- **`memories/` is gitignored by default.** To version-control, point it at a separate private repo (this author's setup uses [Zane456/my-project-memory](https://github.com/Zane456)) or remove the gitignore entry.
+- **Logs do not contain the API key**, but periodically clean `~/.config/cc-memory/logs/`.
 
-## 故障排查
+## Troubleshooting
 
 ```bash
-# 看 worker 日志
+# worker logs
 tail -f ~/.config/cc-memory/logs/worker.log
 
-# 看本次 hook 拆离日志（按时间戳）
+# per-invocation detacher logs
 ls -lt ~/.config/cc-memory/logs/run-*.log | head
 
-# 手动触发一次（不通过 Claude Code）
-echo '{"session_id":"manual-test","transcript_path":"/tmp/fake.jsonl","reason":"manual"}' \
+# manual trigger (bypassing Claude Code)
+echo '{"session_id":"manual","transcript_path":"/tmp/fake.jsonl","reason":"test","last_assistant_message":"a smoke-test message long enough to clear the min_assistant_chars threshold"}' \
     | bash ./memory_system/hooks/session_end.sh
 sleep 2
 tail ~/.config/cc-memory/logs/worker.log
+
+# searched but found nothing? cwd may have moved:
+python3 ./memory_system/cli/ccmem.py list -n 5             # check the cwd field
+python3 ./memory_system/cli/ccmem.py find "<kw>" --all     # extend to global
 ```
 
-详细设计见 [DESIGN.md](./DESIGN.md)。
+Full architecture: [DESIGN.md](./DESIGN.md).
