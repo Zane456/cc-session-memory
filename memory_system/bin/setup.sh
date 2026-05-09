@@ -316,6 +316,20 @@ python3 "$ROOT/cli/ccmem.py" last-session \$ARGUMENTS
 MD
     chmod 644 "$USER_CMDS/recall.md" "$USER_CMDS/sess.md"
     echo "✓ slash 命令写入 $USER_CMDS/{recall,sess}.md（绝对路径版本）"
+
+    # 3) 安装 /sess skill（语言触发版，比 slash 命令更智能；模板里有 <CC_MEMORY_REPO> 占位符）
+    USER_SKILLS="$USER_DIR/skills"
+    SESS_TPL="$INSTALL_ROOT/skills/sess/SKILL.md"
+    if [ -f "$SESS_TPL" ]; then
+        mkdir -p "$USER_SKILLS/sess"
+        # 把占位符替换成本机 cc-memory 安装绝对路径
+        sed "s|<CC_MEMORY_REPO>|$INSTALL_ROOT|g" "$SESS_TPL" > "$USER_SKILLS/sess/SKILL.md"
+        chmod 644 "$USER_SKILLS/sess/SKILL.md"
+        echo "✓ /sess skill 写入 $USER_SKILLS/sess/SKILL.md（占位符已替换为 $INSTALL_ROOT）"
+    else
+        echo "⚠ skills/sess/SKILL.md 模板不存在（可能 repo 不完整），跳过 skill 安装"
+    fi
+
     echo
     echo "✓ 全局安装完成。现在在**任意项目**目录跑 \`claude\`，每轮回答完都会触发 cc-memory。"
 else

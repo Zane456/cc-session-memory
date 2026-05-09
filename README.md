@@ -4,6 +4,8 @@
 **用 GLM (z.ai) API 总结这一轮**（省 token），**完全后台异步**不阻塞 CC，**append 到当 session 的 md 文件**。
 **不在 SessionStart 自动加载**，需要时通过 `/recall` 搜索或 `/sess` 加载上一次 session 全文。
 
+> 📦 **想直接装？** 看 [INSTALL.md](./INSTALL.md) — 推荐"让 Claude Code 自己装"路径，3 分钟完事。
+
 设计灵感来自 [thedotmack/claude-mem](https://github.com/thedotmack/claude-mem)，但做了三处简化 + 一处不同：
 
 | 维度 | claude-mem | 本项目 |
