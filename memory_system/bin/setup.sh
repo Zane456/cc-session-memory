@@ -12,7 +12,7 @@
 #   ./setup.sh --memories-dir ~/cc-mem      自定义 memories 目录
 #
 # 默认行为：
-#   - config 不存在 → 从 example 生成（默认 model = glm-5-turbo）
+#   - config 不存在 → 从 example 生成（默认指向 OpenAI gpt-4o-mini，可改）
 #   - 已存在 → 保留，仅打印当前值（除非 --force）
 #   - 不带 --global / --unregister-global → 仅生成 config，不动 ~/.claude/
 
@@ -133,7 +133,7 @@ if [ -f "$CONF_FILE" ] && [ "$FORCE" -ne 1 ]; then
 else
     # 新建 OR --force 覆盖
     if [ -z "$API_KEY" ]; then
-        read -r -p "粘贴你的 z.ai API key: " API_KEY
+        read -r -p "粘贴你的 LLM API key（OpenAI / DeepSeek / Anthropic / OpenRouter / z.ai 等都行）: " API_KEY
     fi
     if [ -z "$API_KEY" ]; then
         echo "api key is empty, abort" >&2
@@ -318,4 +318,5 @@ fi
 echo
 echo "下一步："
 echo "  · 用 'python3 $ROOT/cli/ccmem.py list' 看记忆，或 CC 里输 /sess [关键词]"
-echo "  · 真实调 z.ai 验一下：./bin/smoke_test.sh --isolated"
+echo "  · 用配置好的 LLM 端到端验一下：./bin/smoke_test.sh --isolated"
+echo "  · 想换 provider（默认 OpenAI gpt-4o-mini）：编辑 ~/.config/cc-memory/config.json 的 endpoint/model/protocol，或在 Claude Code 里说"换成 deepseek/anthropic/ollama"让 Claude 帮你改"

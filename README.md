@@ -2,7 +2,7 @@
 
 > 🌐 **English** · [中文](./README.zh.md)
 
-A lightweight per-turn session memory system for Claude Code. After every Claude turn, a `Stop` hook fires, a detached Python worker calls the **GLM API at z.ai** to summarize that turn (cheap), and appends it to a per-session markdown file. Nothing auto-loads on the next session — you pull memory in **explicitly** via `/sess`, or by saying things like *"what was the original wording last time?"* (the `sess` skill auto-triggers `--raw` mode).
+A lightweight per-turn session memory system for Claude Code. After every Claude turn, a `Stop` hook fires, a detached Python worker calls **an LLM of your choice** (OpenAI / Anthropic / DeepSeek / OpenRouter / Ollama / Z.AI / any OpenAI-Chat-Completions or Anthropic-Messages endpoint — see the [Provider matrix](#provider-matrix) below) to summarize that turn, and appends it to a per-session markdown file. Nothing auto-loads on the next session — you pull memory in **explicitly** via `/sess`, or by saying things like *"what was the original wording last time?"* (the `sess` skill auto-triggers `--raw` mode).
 
 > 📦 **Want to install?** See [INSTALL.md](./INSTALL.md) — recommended path: *let Claude Code install it for you*, ~3 minutes.
 
@@ -18,7 +18,7 @@ Inspired by [thedotmack/claude-mem](https://github.com/thedotmack/claude-mem), w
 |---|---|---|
 | Hook count | 5 (SessionStart / UserPromptSubmit / PostToolUse / Stop / SessionEnd) | **1 (Stop, per-turn append)** |
 | Write timing | Continuous observation during session | **Once per turn** — at most loses the unfinished last turn |
-| Summary engine | Claude agent-sdk | **z.ai GLM API** (cheap) |
+| Summary engine | Claude agent-sdk | **Bring your own LLM** (OpenAI / Anthropic / DeepSeek / Ollama / Z.AI / ...) |
 | SessionStart auto-inject | Yes | **No** — manual `/sess` |
 | Storage | SQLite + Chroma vector DB | **Markdown files + grep** |
 
@@ -40,14 +40,34 @@ These two tradeoffs in one line: **Write should be automatic and cheap; read sho
 
 ## Two-layer storage
 
-cc-memory writes its own GLM summaries; **Claude Code itself separately writes the full raw transcript** (its `/resume` and `/continue` features depend on this). cc-memory's `--raw` mode reads that.
+cc-memory writes its own LLM summaries; **Claude Code itself separately writes the full raw transcript** (its `/resume` and `/continue` features depend on this). cc-memory's `--raw` mode reads that.
 
 | Layer | Where | Format | Per turn | Read via |
 |---|---|---|---|---|
-| GLM summary (lossy, fast) | `<repo>/memories/YYYY-MM-DD-<sid>.md` | markdown + frontmatter | ~300 chars | `ccmem find / last-session`, `/sess` |
+| LLM summary (lossy, fast) | `<repo>/memories/YYYY-MM-DD-<sid>.md` | markdown + frontmatter | ~300 chars | `ccmem find / last-session`, `/sess` |
 | CC raw transcript (lossless, large) | `~/.claude/projects/<encoded-cwd>/<sid>.jsonl` | line-delimited JSON | full text + tool I/O | `ccmem ... --raw`; `/sess` auto-triggers `--raw` on phrases like *"exact wording / specifics / details"* |
 
 The raw transcripts grow unboundedly (Claude Code never trims them). cc-memory ships `memory_system/bin/prune_cc_transcripts.py` to cap `~/.claude/projects/` at 3 GB (configurable), oldest first, protecting files modified in the last 24 h.
+
+## Provider matrix
+
+cc-memory talks **OpenAI Chat Completions** or **Anthropic Messages** — that covers basically every modern LLM provider, paid or local. Pick one and drop it into `~/.config/cc-memory/config.json`:
+
+| Provider | `endpoint` | `model` (example) | `protocol` |
+|---|---|---|---|
+| OpenAI | `https://api.openai.com/v1/chat/completions` | `gpt-4o-mini` | `openai` |
+| Anthropic | `https://api.anthropic.com/v1/messages` | `claude-haiku-4-5-20251001` | `anthropic` |
+| DeepSeek | `https://api.deepseek.com/v1/chat/completions` | `deepseek-chat` | `openai` |
+| OpenRouter | `https://openrouter.ai/api/v1/chat/completions` | `anthropic/claude-haiku-4-5` | `openai` |
+| Together | `https://api.together.xyz/v1/chat/completions` | `meta-llama/Llama-3.3-70B-Instruct-Turbo` | `openai` |
+| Groq | `https://api.groq.com/openai/v1/chat/completions` | `llama-3.3-70b-versatile` | `openai` |
+| Ollama (local, free) | `http://localhost:11434/v1/chat/completions` | `qwen2.5:7b` | `openai` |
+| vLLM (local) | `http://localhost:8000/v1/chat/completions` | *(your deployed model)* | `openai` |
+| Z.AI GLM | `https://api.z.ai/api/anthropic/v1/messages` | `glm-5-turbo` | `anthropic` |
+
+`protocol` is auto-detected from the endpoint URL if you omit it (`/messages` or `/anthropic/` → `anthropic`, otherwise `openai`).
+
+> 💡 **Want to switch provider after install?** Open the repo in Claude Code and just say *"change my cc-memory config to deepseek"* (or `anthropic`, `ollama`, etc.). Claude Code will edit `~/.config/cc-memory/config.json` for you.
 
 ## Quick start
 
@@ -56,7 +76,7 @@ See [INSTALL.md](./INSTALL.md) for the full guide. TL;DR:
 ```bash
 git clone https://github.com/Zane456/cc-project-memory.git
 cd cc-project-memory
-./memory_system/bin/setup.sh --global --key <your-z.ai-key>
+./memory_system/bin/setup.sh --global --key <your-LLM-api-key>
 ```
 
 CLI cheatsheet:
@@ -88,7 +108,7 @@ In Claude Code:
 ├── memory_system/
 │   ├── hooks/
 │   │   ├── session_end.sh                # bash detacher (~10 ms return)
-│   │   └── summarize.py                  # python worker (GLM call, md append)
+│   │   └── summarize.py                  # python worker (LLM call, md append)
 │   ├── cli/ccmem.py                      # retrieval CLI
 │   ├── bin/
 │   │   ├── setup.sh                      # one-shot installer
@@ -97,7 +117,7 @@ In Claude Code:
 ├── skills/                               # ~/.claude/skills/ mirror (template)
 │   ├── README.md                         # install / sync instructions
 │   └── sess/SKILL.md                     # /sess language-trigger skill
-├── memories/                             # GLM summaries (gitignored)
+├── memories/                             # LLM summaries (gitignored)
 └── docs/images/                          # the diagrams above
 ```
 
@@ -114,7 +134,7 @@ In Claude Code:
 | Summary length | ~300 chars / turn (`max_tokens=600`) | Detailed enough that another model can read just the summary and know what happened, including failed attempts. |
 | Capacity cap | `max_db_size_mb=200`, FIFO prune to 90 %, **never delete the newest 10** | Prevent unbounded disk growth. |
 | Config location | `~/.config/cc-memory/config.json` (chmod 600) | User-private, not in repo. |
-| Failure handling | GLM error → log to `~/.config/cc-memory/failures/`, never propagate to CC | Always `exit 0`. |
+| Failure handling | LLM error → log to `~/.config/cc-memory/failures/`, never propagate to CC | Always `exit 0`. |
 
 ## Security
 

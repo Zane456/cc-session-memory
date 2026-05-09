@@ -2,7 +2,7 @@
 
 > 🌐 [English](./README.md) · **中文**
 
-一套为 Claude Code 设计的轻量级**逐轮**会话记忆系统。Claude 每回完一轮，`Stop` hook 触发，后台 Python worker 调 **z.ai 的 GLM API** 总结这一轮（省 token），append 到当前 session 的 markdown 文件。下次开新 session **不自动注入历史**——你显式用 `/sess` 拉，或者随口说"上次原话是怎么说的"，`sess` skill 会自动切到 `--raw` 模式读原文。
+一套为 Claude Code 设计的轻量级**逐轮**会话记忆系统。Claude 每回完一轮，`Stop` hook 触发，后台 Python worker 调**你自己挑的 LLM**（OpenAI / Anthropic / DeepSeek / OpenRouter / 本地 Ollama / Z.AI 等任何 OpenAI Chat Completions 或 Anthropic Messages 端点——见下面的 [Provider 矩阵](#provider-矩阵)）总结这一轮，append 到当前 session 的 markdown 文件。下次开新 session **不自动注入历史**——你显式用 `/sess` 拉，或者随口说"上次原话是怎么说的"，`sess` skill 会自动切到 `--raw` 模式读原文。
 
 > 📦 **想直接装？** 看 [INSTALL.md](./INSTALL.md)——推荐"让 Claude Code 帮你装"路径，3 分钟完事。
 
@@ -18,7 +18,7 @@
 |---|---|---|
 | Hook 数量 | 5 个（SessionStart / UserPromptSubmit / PostToolUse / Stop / SessionEnd） | **1 个（仅 Stop，每轮 append）** |
 | 写入时机 | session 期间持续观察 | **每轮一次**——CC 怎么挂都最多丢未完成那轮 |
-| 总结引擎 | Claude agent-sdk | **z.ai GLM API**（便宜） |
+| 总结引擎 | Claude agent-sdk | **你自己挑 LLM**（OpenAI / Anthropic / DeepSeek / 本地 Ollama / Z.AI 等） |
 | SessionStart 自动注入 | 是 | **否**——手动 `/sess` |
 | 存储 | SQLite + Chroma 向量库 | **markdown 文件 + grep** |
 
@@ -40,14 +40,34 @@ claude-mem 每次开新会话时，自动把上一次 session 的摘要塞进 co
 
 ## 双层存储
 
-cc-memory 写自己的 GLM 摘要；**Claude Code 自己另写一份完整原始 transcript**（`/resume`、`/continue` 这类功能依赖它）。cc-memory 的 `--raw` 模式就读这一份。
+cc-memory 写自己的 LLM 摘要；**Claude Code 自己另写一份完整原始 transcript**（`/resume`、`/continue` 这类功能依赖它）。cc-memory 的 `--raw` 模式就读这一份。
 
 | 层 | 位置 | 格式 | 单轮大小 | 怎么读 |
 |---|---|---|---|---|
-| GLM 摘要（有损、快） | `<repo>/memories/YYYY-MM-DD-<sid>.md` | markdown + frontmatter | ~300 字 | `ccmem find / last-session`、`/sess` |
+| LLM 摘要（有损、快） | `<repo>/memories/YYYY-MM-DD-<sid>.md` | markdown + frontmatter | ~300 字 | `ccmem find / last-session`、`/sess` |
 | CC 原始 transcript（无损、大） | `~/.claude/projects/<encoded-cwd>/<sid>.jsonl` | line-delimited JSON | 完整对话 + 工具 I/O | `ccmem ... --raw`；`/sess` 在用户说"原话/具体细节/原文"时自动走 `--raw` |
 
 CC 的原始 transcript 会无限膨胀（CC 自己不删）。cc-memory 自带 `memory_system/bin/prune_cc_transcripts.py`，默认把 `~/.claude/projects/` 卡在 3 GB（可调），按 mtime 升序删最旧，保护最近 24 小时活跃的文件。
+
+## Provider 矩阵
+
+cc-memory 说 **OpenAI Chat Completions** 或 **Anthropic Messages** 协议——基本覆盖所有现代 LLM 提供商，付费的免费的本地的都行。挑一个填到 `~/.config/cc-memory/config.json`：
+
+| 提供商 | `endpoint` | `model`（示例） | `protocol` |
+|---|---|---|---|
+| OpenAI | `https://api.openai.com/v1/chat/completions` | `gpt-4o-mini` | `openai` |
+| Anthropic | `https://api.anthropic.com/v1/messages` | `claude-haiku-4-5-20251001` | `anthropic` |
+| DeepSeek | `https://api.deepseek.com/v1/chat/completions` | `deepseek-chat` | `openai` |
+| OpenRouter | `https://openrouter.ai/api/v1/chat/completions` | `anthropic/claude-haiku-4-5` | `openai` |
+| Together | `https://api.together.xyz/v1/chat/completions` | `meta-llama/Llama-3.3-70B-Instruct-Turbo` | `openai` |
+| Groq | `https://api.groq.com/openai/v1/chat/completions` | `llama-3.3-70b-versatile` | `openai` |
+| Ollama（本地、免费） | `http://localhost:11434/v1/chat/completions` | `qwen2.5:7b` | `openai` |
+| vLLM（本地） | `http://localhost:8000/v1/chat/completions` | *（你部署的 model id）* | `openai` |
+| Z.AI GLM | `https://api.z.ai/api/anthropic/v1/messages` | `glm-5-turbo` | `anthropic` |
+
+`protocol` 不写也行——worker 会从 endpoint URL 自动嗅探（`/messages` 或 `/anthropic/` → `anthropic`，否则 `openai`）。
+
+> 💡 **装完想换 provider？** 直接在 Claude Code 里说 *"把我的 cc-memory 配置换成 deepseek"*（或 `anthropic`、`ollama` 等），Claude 会帮你改 `~/.config/cc-memory/config.json`。
 
 ## 快速开始
 
@@ -56,7 +76,7 @@ CC 的原始 transcript 会无限膨胀（CC 自己不删）。cc-memory 自带 
 ```bash
 git clone https://github.com/Zane456/cc-project-memory.git
 cd cc-project-memory
-./memory_system/bin/setup.sh --global --key <你的-z.ai-key>
+./memory_system/bin/setup.sh --global --key <你的-LLM-api-key>
 ```
 
 CLI 速查：
@@ -88,7 +108,7 @@ python3 memory_system/bin/prune_cc_transcripts.py --dry-run  # 把 ~/.claude/pro
 ├── memory_system/
 │   ├── hooks/
 │   │   ├── session_end.sh                # bash 拆离器（~10 ms 返回）
-│   │   └── summarize.py                  # python worker（调 GLM、写 md）
+│   │   └── summarize.py                  # python worker（调 LLM、写 md）
 │   ├── cli/ccmem.py                      # 检索 CLI
 │   ├── bin/
 │   │   ├── setup.sh                      # 一次性安装脚本
@@ -97,7 +117,7 @@ python3 memory_system/bin/prune_cc_transcripts.py --dry-run  # 把 ~/.claude/pro
 ├── skills/                               # ~/.claude/skills/ 镜像（模板）
 │   ├── README.md                         # 安装/同步说明
 │   └── sess/SKILL.md                     # /sess 语言触发 skill
-├── memories/                             # GLM 摘要（gitignored）
+├── memories/                             # LLM 摘要（gitignored）
 └── docs/images/                          # 上面那两张图
 ```
 
@@ -114,7 +134,7 @@ python3 memory_system/bin/prune_cc_transcripts.py --dry-run  # 把 ~/.claude/pro
 | 摘要长度 | ~300 字 / 轮（`max_tokens=600`） | 详尽到让别的模型只看摘要就能知道发生了什么、踩过哪些坑 |
 | 容量上限 | `max_db_size_mb=200`，FIFO 剪枝到 90%，**最新 10 条永不删** | 防止长期累积爆盘 |
 | 配置位置 | `~/.config/cc-memory/config.json`（chmod 600） | 用户私有，不进 repo |
-| 失败处理 | GLM 失败 → 写到 `~/.config/cc-memory/failures/`，永不传回 CC | 永远 `exit 0` |
+| 失败处理 | LLM 调用失败 → 写到 `~/.config/cc-memory/failures/`，永不传回 CC | 永远 `exit 0` |
 
 ## 安全
 
@@ -132,7 +152,7 @@ tail -f ~/.config/cc-memory/logs/worker.log
 ls -lt ~/.config/cc-memory/logs/run-*.log | head
 
 # 手动触发一次（绕过 CC）
-echo '{"session_id":"manual","transcript_path":"/tmp/fake.jsonl","reason":"test","last_assistant_message":"足够长的烟雾测试消息，超过 min_assistant_chars 阈值才会触发 GLM 调用"}' \
+echo '{"session_id":"manual","transcript_path":"/tmp/fake.jsonl","reason":"test","last_assistant_message":"足够长的烟雾测试消息，超过 min_assistant_chars 阈值才会触发 LLM 调用"}' \
     | bash ./memory_system/hooks/session_end.sh
 sleep 2
 tail ~/.config/cc-memory/logs/worker.log

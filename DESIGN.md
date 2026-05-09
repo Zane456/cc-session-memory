@@ -1,6 +1,10 @@
 # cc-memory · 设计方案
 
-> ⚠️ **历史快照**：本文档是 v0.1 的设计稿，保留作为方案演进存档。当前已不再提供 `/recall` slash 命令——能力被 `ccmem find` / `/sess` 吸收。后续行为请以 [README](./README.md) 为准。
+> ⚠️ **历史快照**：本文档是 v0.1 的设计稿，保留作为方案演进存档。**两处已与当前实现脱节**：
+> 1. 不再提供 `/recall` slash 命令——能力被 `ccmem find` / `/sess` 吸收
+> 2. 总结引擎不再硬绑 z.ai GLM——现在支持 **OpenAI Chat Completions** + **Anthropic Messages** 两套协议，任何兼容端点（OpenAI / DeepSeek / OpenRouter / 本地 Ollama / vLLM / Z.AI / Anthropic ...）都能直接接，靠 `config.protocol` + `config.endpoint` 切换
+>
+> 后续行为请以 [README](./README.md) 和 [INSTALL.md](./INSTALL.md)（含 Provider 矩阵）为准。
 
 一个为 Claude Code 设计的轻量级会话记忆系统。借鉴 [claude-mem](https://github.com/thedotmack/claude-mem) 的 hook-driven 思路，三处关键差异：
 

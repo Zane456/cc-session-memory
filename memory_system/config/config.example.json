@@ -1,18 +1,34 @@
 {
-  "_comment": "复制到 ~/.config/cc-memory/config.json 后填入真实 api_key，并 chmod 600。",
-  "api_key": "YOUR_Z_AI_API_KEY_HERE",
-  "endpoint": "https://api.z.ai/api/anthropic/v1/messages",
-  "_endpoint_comment": "z.ai Anthropic Messages 兼容端点。worker 的 GLM 调用用这套 schema（x-api-key + anthropic-version）。OpenAI-compat /api/paas/v4/chat/completions 在 z.ai 是独立计费，资源包没买就 1113。",
-  "model": "glm-5-turbo",
-  "_model_comment": "glm-5-turbo / glm-5 / glm-5.1 都跑得通；4.5-flash 免费但摘要质量打折。",
+  "_README": "Copy to ~/.config/cc-memory/config.json, fill api_key, then chmod 600. cc-memory works with any LLM that speaks OpenAI Chat Completions or Anthropic Messages — see INSTALL.md 'Provider matrix' for ready-made endpoint/model presets.",
+
+  "api_key": "YOUR_LLM_API_KEY",
+
+  "protocol": "openai",
+  "_protocol_comment": "openai | anthropic. 不写也行：worker 会从 endpoint URL 自动嗅探（含 /messages 或 /anthropic/ → anthropic，否则 openai）。",
+
+  "endpoint": "https://api.openai.com/v1/chat/completions",
+  "_endpoint_comment": "默认指向 OpenAI Chat Completions。换提供商示例（直接覆盖 endpoint + model + protocol）：\n  · DeepSeek:   https://api.deepseek.com/v1/chat/completions   + deepseek-chat              + openai\n  · OpenRouter: https://openrouter.ai/api/v1/chat/completions  + anthropic/claude-haiku-4-5 + openai\n  · Together:   https://api.together.xyz/v1/chat/completions   + meta-llama/Llama-3.3-70B-Instruct-Turbo + openai\n  · Ollama 本地: http://localhost:11434/v1/chat/completions     + qwen2.5:7b                 + openai\n  · vLLM 本地:   http://localhost:8000/v1/chat/completions      + <你部署的 model id>        + openai\n  · Anthropic:  https://api.anthropic.com/v1/messages           + claude-haiku-4-5-20251001  + anthropic\n  · Z.AI GLM:   https://api.z.ai/api/anthropic/v1/messages      + glm-5-turbo                + anthropic",
+
+  "model": "gpt-4o-mini",
+  "_model_comment": "任意 model id；只要 endpoint 认就行。便宜的常见选项：gpt-4o-mini / deepseek-chat / claude-haiku-4-5-20251001 / qwen2.5:7b（Ollama）/ glm-5-turbo（z.ai）。",
+
   "temperature": 0.3,
-  "max_tokens": 400,
-  "_max_tokens_comment": "轻量记录模板（用户提问+最终结果+关键词），400 token 够。如果模板恢复成详细总结需要调高。",
+
+  "max_tokens": 600,
+  "_max_tokens_comment": "每轮 ~300 字详细总结，max_tokens=600 够用。要更精简改成 300。",
+
   "request_timeout_seconds": 60,
+
   "memories_dir": null,
-  "_memories_dir_comment": "null = 自动用 <install>/memories；也可手动设成绝对路径（比如 ~/.cc-memory/memories）",
+  "_memories_dir_comment": "null = 自动用 <install>/memories；也可手动设成绝对路径（比如 ~/.cc-memory/memories）。",
+
   "transcript_truncate_chars": 60000,
+  "user_text_truncate_chars": 4000,
+  "assistant_text_truncate_chars": 4000,
+
   "max_db_size_mb": 200,
   "_max_db_size_comment": "memories/ 目录的总容量上限。每次写入新记忆后会自动检查；超出按 frontmatter 的 timestamp FIFO 剪枝到 90% 以下。最新 10 条始终保留。设 0 关闭。",
+
+  "min_assistant_chars": 50,
   "language": "zh"
 }

@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# cc-memory · 真实 GLM API 烟雾测试
+# cc-memory · 真实 LLM API 烟雾测试
 # 验证：
 #   1) ~/.config/cc-memory/config.json 可读
-#   2) z.ai endpoint 可达 + api_key 有效
+#   2) config 里的 endpoint 可达 + api_key 有效（无论 OpenAI / Anthropic / 兼容端点）
 #   3) hook 拆离 < 200ms
-#   4) python worker 真的能调 z.ai 写出 markdown
+#   4) python worker 真的能调你配置的 LLM 写出 markdown
 #
 # 默认会用真实 memories_dir → 留下 1 条 smoke-xxx 记忆。
 # 加 --isolated：所有产出（config 副本 + memories 副本）写到 mktemp -d 的临时目录，跑完即清理。
@@ -100,10 +100,10 @@ echo "─── 3) 模拟 Stop hook payload，验证拆离时间 ───"
 TRANSCRIPT="$(mktemp -t ccmem-smoke-tr.XXXXXX.jsonl)"
 cat > "$TRANSCRIPT" <<'JSONL'
 {"type":"user","message":{"role":"user","content":"smoke test：解释一下什么是 cc-memory 的 Stop hook。"}}
-{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"cc-memory 的 Stop hook 在 Claude 每轮回完话时触发，会异步用 GLM 总结这一轮并 append 到当 session 的 markdown 文件，全程不阻塞 Claude Code 的退出。这是真实端到端调用测试。"}]}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"cc-memory 的 Stop hook 在 Claude 每轮回完话时触发，会异步用配置的 LLM 总结这一轮并 append 到当 session 的 markdown 文件，全程不阻塞 Claude Code 的退出。这是真实端到端调用测试。"}]}}
 JSONL
 
-LAST_ASSIST="cc-memory 的 Stop hook 在 Claude 每轮回完话时触发，会异步用 GLM 总结这一轮并 append 到当 session 的 markdown 文件，全程不阻塞 Claude Code 的退出。这是真实端到端调用测试。"
+LAST_ASSIST="cc-memory 的 Stop hook 在 Claude 每轮回完话时触发，会异步用配置的 LLM 总结这一轮并 append 到当 session 的 markdown 文件，全程不阻塞 Claude Code 的退出。这是真实端到端调用测试。"
 PAYLOAD=$(python3 -c "
 import json,sys,time
 print(json.dumps({
@@ -128,7 +128,7 @@ else
 fi
 
 echo
-echo "─── 4) 等 worker 调 z.ai 完成（最长 30s） ───"
+echo "─── 4) 等 worker 调 LLM 完成（最长 30s） ───"
 MEM_DIR=$(python3 -c "import json; print(json.load(open('$CONF')).get('memories_dir'))")
 echo "  memories_dir = $MEM_DIR"
 

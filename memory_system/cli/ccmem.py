@@ -201,7 +201,7 @@ def _make_byte_budget(max_bytes: int):
 
 # ────────────────────────────────────────────────────────────────────────────
 # CC 原始 transcript 检索（--raw 模式）
-# memories/ 里只是 GLM 摘要；CC 自己把每个 session 的完整对话写在
+# memories/ 里只是 LLM 摘要；CC 自己把每个 session 的完整对话写在
 # ~/.claude/projects/<encoded-cwd>/<session-uuid>.jsonl，要看原话就读这个。
 # ────────────────────────────────────────────────────────────────────────────
 
@@ -766,7 +766,7 @@ def cmd_last_session(args: argparse.Namespace) -> int:
     if args.max_bytes > 0:
         write(f"# 预算: --max-bytes {args.max_bytes}")
     if getattr(args, "raw", False):
-        write(f"# 模式: --raw（绕过 GLM 摘要，直接读 CC 原始 jsonl）")
+        write(f"# 模式: --raw（绕过 LLM 摘要，直接读 CC 原始 jsonl）")
     printed = 0
 
     # --raw 模式：跳过 md 摘要正文，改读 ~/.claude/projects/<sid>.jsonl
@@ -909,7 +909,7 @@ def build_parser() -> argparse.ArgumentParser:
     psess.add_argument("--max-bytes", type=int, default=0,
                        help="输出字节预算上限（跨 session 累计），超出后跳过剩余 session 并提示；0=无限")
     psess.add_argument("--raw", action="store_true",
-                       help="绕过 GLM 摘要，直接读 CC 写在 ~/.claude/projects/ 的原始 jsonl 对话")
+                       help="绕过 LLM 摘要，直接读 CC 写在 ~/.claude/projects/ 的原始 jsonl 对话")
     psess.add_argument("--include-tool-results", action="store_true",
                        help="raw 模式下连工具调用结果也打出来（默认只显示 user/assistant 文本+工具名）")
     psess.set_defaults(func=cmd_last_session)
@@ -925,7 +925,7 @@ def build_parser() -> argparse.ArgumentParser:
     pf.add_argument("--max-bytes", type=int, default=0,
                     help="输出字节预算上限（跨 session 累计），超出后停止并提示；0=无限")
     pf.add_argument("--raw", action="store_true",
-                    help="在 CC 原始 jsonl 里搜（细节比 GLM 摘要全得多；用于查具体原话/参数/错误）")
+                    help="在 CC 原始 jsonl 里搜（细节比 LLM 摘要全得多；用于查具体原话/参数/错误）")
     pf.add_argument("--include-tool-results", action="store_true",
                     help="raw 模式下连工具调用结果也打出来")
     pf.set_defaults(func=cmd_find)
