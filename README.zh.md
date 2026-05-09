@@ -2,7 +2,7 @@
 
 > 🌐 [English](./README.md) · **中文**
 
-一套为 Claude Code 设计的轻量级**逐轮**会话记忆系统。Claude 每回完一轮，`Stop` hook 触发，后台 Python worker 调 **z.ai 的 GLM API** 总结这一轮（省 token），append 到当前 session 的 markdown 文件。下次开新 session **不自动注入历史**——你显式用 `/sess` 拉，或者随口说 "上次原话是怎么说的"，`sess` skill 会自动切到 `--raw` 模式读原文。
+一套为 Claude Code 设计的轻量级**逐轮**会话记忆系统。Claude 每回完一轮，`Stop` hook 触发，后台 Python worker 调 **z.ai 的 GLM API** 总结这一轮（省 token），append 到当前 session 的 markdown 文件。下次开新 session **不自动注入历史**——你显式用 `/sess` 拉，或者随口说"上次原话是怎么说的"，`sess` skill 会自动切到 `--raw` 模式读原文。
 
 > 📦 **想直接装？** 看 [INSTALL.md](./INSTALL.md)——推荐"让 Claude Code 帮你装"路径，3 分钟完事。
 
@@ -19,14 +19,14 @@
 | Hook 数量 | 5 个（SessionStart / UserPromptSubmit / PostToolUse / Stop / SessionEnd） | **1 个（仅 Stop，每轮 append）** |
 | 写入时机 | session 期间持续观察 | **每轮一次**——CC 怎么挂都最多丢未完成那轮 |
 | 总结引擎 | Claude agent-sdk | **z.ai GLM API**（便宜） |
-| SessionStart 自动注入 | 是 | **否**——手动 `/sess` 或 `/recall` |
+| SessionStart 自动注入 | 是 | **否**——手动 `/sess` |
 | 存储 | SQLite + Chroma 向量库 | **markdown 文件 + grep** |
 
 ### 1. 不做跨项目记忆 ❌
 
 claude-mem 用向量库做"跨所有项目"的语义检索，听起来很酷。但**真正会用 CC 的人本身就会做好项目管理**——每个项目都有自己的 `CLAUDE.md`、自己的文档、自己的代码。跨项目搜回来的多数是**伪相关**信号（关键词撞车、概念名字一样实质不同），反而稀释当前项目的判断。
 
-→ cc-memory 默认按 `cwd` 隔离记忆。`/sess`、`/recall` 优先在当前项目里找，加 `--all` 才扩到全局。**不预设"你需要跨项目"。**
+→ cc-memory 默认按 `cwd` 隔离记忆。`/sess` 优先在当前项目里找，加 `--all` 才扩到全局。**不预设"你需要跨项目"。**
 
 ### 2. 不在 SessionStart 自动注入历史 ❌
 

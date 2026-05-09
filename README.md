@@ -2,7 +2,7 @@
 
 > 🌐 **English** · [中文](./README.zh.md)
 
-A lightweight per-turn session memory system for Claude Code. After every Claude turn, a `Stop` hook fires, a detached Python worker calls the **GLM API at z.ai** to summarize that turn (cheap), and appends it to a per-session markdown file. Nothing auto-loads on the next session — you pull memory in **explicitly** via `/sess` or by saying things like *"what was the original wording last time?"* (the `sess` skill auto-triggers `--raw` mode).
+A lightweight per-turn session memory system for Claude Code. After every Claude turn, a `Stop` hook fires, a detached Python worker calls the **GLM API at z.ai** to summarize that turn (cheap), and appends it to a per-session markdown file. Nothing auto-loads on the next session — you pull memory in **explicitly** via `/sess`, or by saying things like *"what was the original wording last time?"* (the `sess` skill auto-triggers `--raw` mode).
 
 > 📦 **Want to install?** See [INSTALL.md](./INSTALL.md) — recommended path: *let Claude Code install it for you*, ~3 minutes.
 
@@ -19,14 +19,14 @@ Inspired by [thedotmack/claude-mem](https://github.com/thedotmack/claude-mem), w
 | Hook count | 5 (SessionStart / UserPromptSubmit / PostToolUse / Stop / SessionEnd) | **1 (Stop, per-turn append)** |
 | Write timing | Continuous observation during session | **Once per turn** — at most loses the unfinished last turn |
 | Summary engine | Claude agent-sdk | **z.ai GLM API** (cheap) |
-| SessionStart auto-inject | Yes | **No** — manual `/sess` or `/recall` |
+| SessionStart auto-inject | Yes | **No** — manual `/sess` |
 | Storage | SQLite + Chroma vector DB | **Markdown files + grep** |
 
 ### 1. No cross-project memory by default ❌
 
 claude-mem's vector DB does "search across all projects" semantic retrieval — sounds cool. But people who actually use Claude Code seriously already organize their work per-project (each has its own `CLAUDE.md`, docs, code). Cross-project search retrieves mostly **false-positive** signals (keyword collisions, same-name-different-meaning concepts) that dilute the current project's signal.
 
-→ cc-memory isolates by `cwd` by default. `/sess` and `/recall` look in the current project first; `--all` extends globally. **No assumption that you need cross-project context.**
+→ cc-memory isolates by `cwd` by default. `/sess` looks in the current project first; `--all` extends globally. **No assumption that you need cross-project context.**
 
 ### 2. No SessionStart auto-inject ❌
 

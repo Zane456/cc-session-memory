@@ -49,7 +49,7 @@ cd cc-project-memory
 |---|---|---|
 | 创建 config | `~/.config/cc-memory/config.json` (chmod 600) | 已有则保留，加 `--force` 覆盖（先备份 .bak）|
 | 注册 Stop hook | `~/.claude/settings.json` | merge 到现有 hooks，不破坏你别的配置；旧文件备份 .bak |
-| 装 slash 命令 | `~/.claude/commands/{recall,sess}.md` | 老入口，向后兼容 |
+| 装 slash 命令 | `~/.claude/commands/sess.md` | 老入口，与 sess skill 并存 |
 | 装 sess skill | `~/.claude/skills/sess/SKILL.md` | 新入口，从 `skills/sess/SKILL.md` 模板生成，自动把 `<CC_MEMORY_REPO>` 替换成本机绝对路径 |
 | 给可执行位 | hook + cli | |
 
@@ -74,7 +74,7 @@ which claude            # 需要 Claude Code 已装
 ./memory_system/bin/setup.sh --global --key <ZAI_KEY>
 ```
 
-期望输出：`✓ Stop hook 写入 ...`、`✓ slash 命令写入 ...`、`✓ /sess skill 写入 ...`、`✓ 全局安装完成`。
+期望输出：`✓ Stop hook 写入 ...`、`✓ /sess slash 命令写入 ...`、`✓ /sess skill 写入 ...`、`✓ 全局安装完成`。
 
 ### 3. 验证 4 个落地点
 

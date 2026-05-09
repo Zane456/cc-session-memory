@@ -12,10 +12,9 @@
   ccmem search "关键词" --cwd /x     搜索叠加任意目录过滤
   ccmem show <id-or-prefix>        打印一条记忆
   ccmem latest [-n N]              打印最新 N 条全文
-  ccmem recall [关键词] [--all]      给 /recall slash 命令用：默认 cwd 范围 → 加 --all 全局
   ccmem path                       打印 memories 目录路径
 
-cwd 匹配规则（用于 here / --here / recall）：
+cwd 匹配规则（用于 here / --here / find / last-session）：
   · 严格相等
   · 一方是另一方的子目录（项目内任意位置都算"在这个项目里"）
   · 路径在比较前会 expand + resolve 软链接
@@ -501,25 +500,6 @@ def cmd_search(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_recall(args: argparse.Namespace) -> int:
-    """`/recall` slash 命令的入口。
-    · 无 query + 无 --all → ccmem here -n N
-    · 无 query + --all   → ccmem list -n N
-    · 有 query + 无 --all → ccmem search <q> --here
-    · 有 query + --all   → ccmem search <q>（全局）
-    """
-    query = " ".join(args.query).strip() if isinstance(args.query, list) else (args.query or "")
-    n = args.limit
-    if not query and not args.all:
-        return cmd_here(argparse.Namespace(cwd=None, limit=n if n else 10, all=False))
-    if not query and args.all:
-        return cmd_list(argparse.Namespace(date=None, limit=n if n else 10, all=False))
-    here = not args.all
-    return cmd_search(argparse.Namespace(
-        query=query, context=3, limit=n if n else 5, here=here, cwd=None,
-    ))
-
-
 def cmd_show(args: argparse.Namespace) -> int:
     target = _resolve(args.id_or_prefix)
     if not target:
@@ -904,13 +884,6 @@ def build_parser() -> argparse.ArgumentParser:
     ps.add_argument("--here", action="store_true", help="只在当前 cwd 范围搜")
     ps.add_argument("--cwd", help="只在指定路径范围搜（与 --here 二选一）")
     ps.set_defaults(func=cmd_search)
-
-    pr = sub.add_parser("recall", help="/recall slash 命令调用入口（cwd-aware 派发）")
-    pr.add_argument("query", nargs="*", help="搜索关键词；不给则列出最近记忆")
-    pr.add_argument("--all", action="store_true", help="切到全局（不限当前 cwd）")
-    pr.add_argument("-n", "--limit", type=int, default=0,
-                    help="最多展示几条（list/here 默认 10，search 默认 5）")
-    pr.set_defaults(func=cmd_recall)
 
     psh = sub.add_parser("show", help="打印一条记忆")
     psh.add_argument("id_or_prefix", help="文件名 / session_id 前缀 / 日期前缀")

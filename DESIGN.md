@@ -1,10 +1,12 @@
 # cc-memory · 设计方案
 
+> ⚠️ **历史快照**：本文档是 v0.1 的设计稿，保留作为方案演进存档。当前已不再提供 `/recall` slash 命令——能力被 `ccmem find` / `/sess` 吸收。后续行为请以 [README](./README.md) 为准。
+
 一个为 Claude Code 设计的轻量级会话记忆系统。借鉴 [claude-mem](https://github.com/thedotmack/claude-mem) 的 hook-driven 思路，三处关键差异：
 
 1. **用 Stop hook 增量记录**：每轮 Claude 回完话就总结这一轮、append 到当 session 的同一个 md 文件里。**不依赖 SessionEnd**，CC 怎么挂最多丢"还没回完的最后一轮"
 2. **总结引擎走 GLM API**（z.ai 智谱清言）而非 Claude，省 token
-3. **不在 SessionStart 注入上下文**，需要时手动 `/recall` 或 `/sess`
+3. **不在 SessionStart 注入上下文**，需要时手动 `/sess`（带或不带关键词）
 
 ---
 
@@ -44,8 +46,8 @@
 
       ┌─── 用户主动检索 ───────────────────────────────┐
       │  cli/ccmem.py  ── grep 搜索 markdown           │
-      │  · /recall <kw>   cwd 范围搜索                  │
       │  · /sess          加载本项目最近一次 session    │
+      │  · /sess <kw>     当前项目按关键词搜命中 session│
       └─────────────────────────────────────────────────┘
 ```
 
@@ -60,7 +62,7 @@
 ├── .claude/
 │   ├── settings.json              # Claude Code 项目级 hook 配置
 │   └── commands/
-│       └── recall.md              # 可选 slash 命令（手动检索）
+│       └── sess.md                # /sess slash 命令（手动检索）
 ├── memory_system/
 │   ├── hooks/
 │   │   ├── session_end.sh         # bash 拆离器
@@ -165,7 +167,7 @@ ccmem here                       # 仅当前项目目录范围
 ccmem search "GLM"               # 正则搜索（全局）
 ccmem search "GLM" --here        # 正则搜索 + 限当前 cwd
 ccmem search "GLM" --cwd /x      # 正则搜索 + 限指定目录
-ccmem recall [关键词] [--all]      # /recall slash 派发入口
+ccmem find "GLM" [--all] [--raw] # /sess slash 命令派发入口（cwd-aware，支持 --raw 读 CC 原始 jsonl）
 
 # 单条
 ccmem show <id-prefix>           # 打印一条

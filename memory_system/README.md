@@ -32,7 +32,7 @@ ccmem list                    # 最近 20 条
 ccmem list --date 2026-05    # 按月份过滤
 ccmem search "关键词"          # 正则全文搜索
 ccmem show <id-prefix>        # 打印一条
-ccmem latest -n 1             # 打印最新 N 条全文（适合 Claude /recall 调用）
+ccmem latest -n 1             # 打印最新 N 条全文（适合 /sess 加载上下文）
 ccmem path                    # 打印 memories 目录
 ```
 

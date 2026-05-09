@@ -95,7 +95,8 @@ with open(path, "w", encoding="utf-8") as f:
 print(f"removed {len(removed)} cc-memory hook entries: {removed}")
 PY
     echo "✓ 已从 $USER_SETTINGS 移除 cc-memory hook（备份：$USER_SETTINGS.bak）"
-    echo "  · slash 命令文件仍在 ~/.claude/commands/recall.md / sess.md，需要手动 rm"
+    echo "  · /sess slash 命令（如装过）仍在 ~/.claude/commands/sess.md，需要手动 rm"
+    echo "  · /sess skill 仍在 ~/.claude/skills/sess/，需要手动 rm -rf"
     echo "  · ~/.config/cc-memory/ 也保留，要彻底清就 rm -rf 该目录"
     exit 0
 fi
@@ -270,31 +271,7 @@ if removed_old:
 PY
     echo "✓ Stop hook 写入 $USER_SETTINGS（备份：${USER_SETTINGS}.bak）"
 
-    # 2) 生成全局版 slash 命令（用绝对路径，不用 $CLAUDE_PROJECT_DIR）
-    cat > "$USER_CMDS/recall.md" <<MD
----
-description: 检索 cc-memory 历史会话记忆（默认在当前项目目录范围内搜索；加 --all 切全局）
-argument-hint: [关键词] [--all] [-n N]
-allowed-tools: Bash(python3:*)
----
-
-# /recall — 检索历史会话记忆（cc-memory）
-
-执行：
-
-\`\`\`
-python3 "$ROOT/cli/ccmem.py" recall \$ARGUMENTS
-\`\`\`
-
-派发逻辑（CLI 自己处理）：
-- 空：列当前目录范围内最近 10 条
-- \`<关键词>\`：当前目录范围搜索
-- \`<关键词> --all\`：全局搜索
-- \`--all\`：列全局最近 10 条
-
-把命令输出原样返给我；建议补充 \`ccmem show <id-prefix>\` 查全文。
-MD
-
+    # 2) 生成全局版 /sess slash 命令（用绝对路径，不用 $CLAUDE_PROJECT_DIR）
     cat > "$USER_CMDS/sess.md" <<MD
 ---
 description: 加载当前项目目录下最近一次会话的完整记忆作为上下文
@@ -314,8 +291,8 @@ python3 "$ROOT/cli/ccmem.py" last-session \$ARGUMENTS
 
 读完后简短确认已加载，等用户提新问题。
 MD
-    chmod 644 "$USER_CMDS/recall.md" "$USER_CMDS/sess.md"
-    echo "✓ slash 命令写入 $USER_CMDS/{recall,sess}.md（绝对路径版本）"
+    chmod 644 "$USER_CMDS/sess.md"
+    echo "✓ /sess slash 命令写入 $USER_CMDS/sess.md（绝对路径版本）"
 
     # 3) 安装 /sess skill（语言触发版，比 slash 命令更智能；模板里有 <CC_MEMORY_REPO> 占位符）
     USER_SKILLS="$USER_DIR/skills"
@@ -340,5 +317,5 @@ fi
 
 echo
 echo "下一步："
-echo "  · 用 'python3 $ROOT/cli/ccmem.py list' 看记忆，或 CC 里输 /recall <kw>"
+echo "  · 用 'python3 $ROOT/cli/ccmem.py list' 看记忆，或 CC 里输 /sess [关键词]"
 echo "  · 真实调 z.ai 验一下：./bin/smoke_test.sh --isolated"
