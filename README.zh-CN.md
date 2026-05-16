@@ -240,7 +240,14 @@ cc-project-memory/
 
 <br>
 
-Built by **Zane456** — [GitHub](https://github.com/Zane456)
+**Zane456** — 电力电子研究者 & AI 工具链构建者
+
+| 平台 | 链接 |
+| :--- | :--- |
+| 🌐 GitHub | [Zane456](https://github.com/Zane456) |
+| 𝕏 X / Twitter | [@ZaneZaneZzZZ](https://x.com/ZaneZaneZzZZ) |
+| 📕 小红书 | [Zz302179383](https://www.xiaohongshu.com/user/profile/Zz302179383) |
+| ✉️ Email | zz302179383@gmail.com |
 
 <br>
 
