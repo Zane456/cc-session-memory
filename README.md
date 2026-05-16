@@ -241,7 +241,14 @@ Full architecture: [DESIGN.md](DESIGN.md).
 
 <br>
 
-Built by **Zane456** — [GitHub](https://github.com/Zane456)
+**Zane456** — Power Electronics Researcher & AI Tool Builder
+
+| Platform | Link |
+| :--- | :--- |
+| 🌐 GitHub | [Zane456](https://github.com/Zane456) |
+| 𝕏 X / Twitter | [@ZaneZaneZzZZ](https://x.com/ZaneZaneZzZZ) |
+| 📕 小红书 | [Zz302179383](https://www.xiaohongshu.com/user/profile/Zz302179383) |
+| ✉️ Email | zz302179383@gmail.com |
 
 <br>
 
