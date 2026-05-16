@@ -1,77 +1,112 @@
+English | [简体中文](README.zh-CN.md)
+
+<div align="center">
+
 # cc-memory
 
-> 🌐 **English** · [中文](./README.zh.md)
+<p align="center">
+  <img src="docs/images/architecture.png" alt="cc-memory: per-turn session memory for Claude Code — automatic background writes, on-demand reads via /sess command" width="720" />
+</p>
 
-A lightweight per-turn session memory system for Claude Code. After every Claude turn, a `Stop` hook fires, a detached Python worker calls **an LLM of your choice** (OpenAI / Anthropic / DeepSeek / OpenRouter / Ollama / Z.AI / any OpenAI-Chat-Completions or Anthropic-Messages endpoint — see the [Provider matrix](#provider-matrix) below) to summarize that turn, and appends it to a per-session markdown file. Nothing auto-loads on the next session — you pull memory in **explicitly** via `/sess`, or by saying things like *"what was the original wording last time?"* (the `sess` skill auto-triggers `--raw` mode).
+> *"Write auto. Read manual. That's the whole trick."*
 
-> 📦 **Want to install?** See [INSTALL.md](./INSTALL.md) — recommended path: *let Claude Code install it for you*, ~3 minutes.
+[![Language: Python](https://img.shields.io/badge/Language-Python-blue.svg)]()
+[![Platform: Claude%20Code](https://img.shields.io/badge/Platform-Claude_Code-blueviolet.svg)]()
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)]()
 
-![Architecture](./docs/images/architecture.png)
+<br>
 
-## Why these tradeoffs
+**Per-turn session memory for Claude Code — background writes, on-demand reads.**
 
-![Philosophy](./docs/images/philosophy.png)
+<br>
 
-Inspired by [thedotmack/claude-mem](https://github.com/thedotmack/claude-mem), with two intentional differences:
+9 LLM providers · 1 hook · 10 ms return · zero dependencies · markdown + grep
 
-| Dimension | claude-mem | cc-memory |
+<br>
+
+[See It Work](#see-it-work) · [Why This Design](#why-this-design) · [Install](#install) · [Provider Matrix](#provider-matrix) · [How It Works](#how-it-works) · [Key Numbers](#key-numbers)
+
+</div>
+
+---
+
+## See It Work
+
+You finish a Claude Code session. The hook already fired — every turn is summarized.
+
+```bash
+$ python3 memory_system/cli/ccmem.py last-session
+
+# Session: 2026-05-15-a3f8c · Project: Voice-Brother · Turns: 12
+#
+# [Turn 1] User asked to implement streaming ASR with 1.5s timer approach.
+#   Agent chose GCD DispatchSourceTimer over Combine, referenced speech-swift API.
+# [Turn 2] Attempted MLXAudioStreamBuffer wrapper. Failed — MLX array shapes
+#   don't support dynamic append. Switched to ring-buffer approach.
+# [Turn 3] Ring buffer working. MLX cache climbing to 2 GB — added
+#   MLXMemoryGovernor with 256 MB cacheLimit + clearCache() per transcribe.
+#   Active memory stable at 1.8 GB after fix.
+# ...
+```
+
+Next day, new session. Pull memory only when you need it:
+
+```
+/sess
+# → Last session summary loaded into context. Continue where you left off.
+
+/sess "MLX cache"
+# → Every session that mentioned "MLX cache" — grepable, project-scoped.
+
+/sess "what was the exact error message?"
+# → sess skill detects detail-seeking → auto-switches to --raw
+# → reads Claude Code's own full JSONL transcript, not the lossy summary
+```
+
+This is not a vector database doing semantic search across projects.<br>
+It's **one markdown file per session, grepable by design**, isolated to your current project by default.
+
+---
+
+## Why This Design
+
+<p align="center">
+  <img src="docs/images/philosophy.png" alt="cc-memory design philosophy: write automatically in background, read explicitly on demand" width="560" />
+</p>
+
+Inspired by [claude-mem](https://github.com/thedotmack/claude-mem) — with two anti-consensus tradeoffs:
+
+| | claude-mem | cc-memory |
 |---|---|---|
-| Hook count | 5 (SessionStart / UserPromptSubmit / PostToolUse / Stop / SessionEnd) | **1 (Stop, per-turn append)** |
-| Write timing | Continuous observation during session | **Once per turn** — at most loses the unfinished last turn |
-| Summary engine | Claude agent-sdk | **Bring your own LLM** (OpenAI / Anthropic / DeepSeek / Ollama / Z.AI / ...) |
-| SessionStart auto-inject | Yes | **No** — manual `/sess` |
-| Storage | SQLite + Chroma vector DB | **Markdown files + grep** |
+| **Hooks** | 5 (SessionStart / UserPromptSubmit / PostToolUse / Stop / SessionEnd) | **1** (Stop — per-turn append) |
+| **Write timing** | Continuous observation during session | **Once per turn** — crash loses at most 1 turn |
+| **Summary engine** | Claude agent-sdk | **Any LLM** (9+ providers, see matrix below) |
+| **SessionStart auto-inject** | Yes | **No** — explicit `/sess` |
+| **Storage** | SQLite + Chroma vector DB | **Markdown + grep** |
 
-### 1. No cross-project memory by default ❌
+**Tradeoff 1 — No cross-project memory by default.**
+"Search across all projects" returns false-positive signals — keyword collisions, same-name-different-meaning concepts that dilute the current project's context. cc-memory isolates by `cwd`; `--all` extends globally only when you ask.
 
-claude-mem's vector DB does "search across all projects" semantic retrieval — sounds cool. But people who actually use Claude Code seriously already organize their work per-project (each has its own `CLAUDE.md`, docs, code). Cross-project search retrieves mostly **false-positive** signals (keyword collisions, same-name-different-meaning concepts) that dilute the current project's signal.
+**Tradeoff 2 — No SessionStart auto-inject.**
+Context window is scarce. Auto-injection means paying a "context-you-might-not-need" tax every session, diluting the current task's signal. In long conversations this tax forces premature compaction, losing more important info. cc-memory lets you decide: `/sess` to continue, or let memories sit quietly on disk.
 
-→ cc-memory isolates by `cwd` by default. `/sess` looks in the current project first; `--all` extends globally. **No assumption that you need cross-project context.**
+> *Write should be automatic and cheap; read should be explicit and controlled.*
 
-### 2. No SessionStart auto-inject ❌
+---
 
-claude-mem stuffs the previous session's summary into the context window every time you start a new session. **But context window is a scarce resource.** Not every session needs the previous one's history. Auto-injection means paying a "context-you-might-not-need" tax every single time, diluting the current task's signal; in long conversations this tax forces premature compaction, losing more important info.
+## Install
 
-Worse, it **takes the judgment away from you**: even *"do I want history this time"* gets decided for you.
+**Recommended: let Claude Code install it for you** (~3 min):
 
-→ cc-memory makes loading **explicit**: writes are background-automatic (per-turn append), but reads you trigger — `/sess` to continue from last time, `/sess <keyword>` to dig up a topic. When you don't need it, memories sit quietly on disk.
+```bash
+git clone https://github.com/Zane456/cc-project-memory.git
+cd cc-project-memory
+claude
+```
 
-These two tradeoffs in one line: **Write should be automatic and cheap; read should be explicit and controlled.**
+Then paste the install prompt from [INSTALL.md](INSTALL.md) — Claude Code runs `setup.sh`, configures your LLM provider, and verifies everything end-to-end.
 
-## Two-layer storage
-
-cc-memory writes its own LLM summaries; **Claude Code itself separately writes the full raw transcript** (its `/resume` and `/continue` features depend on this). cc-memory's `--raw` mode reads that.
-
-| Layer | Where | Format | Per turn | Read via |
-|---|---|---|---|---|
-| LLM summary (lossy, fast) | `<repo>/memories/YYYY-MM-DD-<sid>.md` | markdown + frontmatter | ~300 chars | `ccmem find / last-session`, `/sess` |
-| CC raw transcript (lossless, large) | `~/.claude/projects/<encoded-cwd>/<sid>.jsonl` | line-delimited JSON | full text + tool I/O | `ccmem ... --raw`; `/sess` auto-triggers `--raw` on phrases like *"exact wording / specifics / details"* |
-
-The raw transcripts grow unboundedly (Claude Code never trims them). cc-memory ships `memory_system/bin/prune_cc_transcripts.py` to cap `~/.claude/projects/` at 3 GB (configurable), oldest first, protecting files modified in the last 24 h.
-
-## Provider matrix
-
-cc-memory talks **OpenAI Chat Completions** or **Anthropic Messages** — that covers basically every modern LLM provider, paid or local. Pick one and drop it into `~/.config/cc-memory/config.json`:
-
-| Provider | `endpoint` | `model` (example) | `protocol` |
-|---|---|---|---|
-| OpenAI | `https://api.openai.com/v1/chat/completions` | `gpt-4o-mini` | `openai` |
-| Anthropic | `https://api.anthropic.com/v1/messages` | `claude-haiku-4-5-20251001` | `anthropic` |
-| DeepSeek | `https://api.deepseek.com/v1/chat/completions` | `deepseek-chat` | `openai` |
-| OpenRouter | `https://openrouter.ai/api/v1/chat/completions` | `anthropic/claude-haiku-4-5` | `openai` |
-| Together | `https://api.together.xyz/v1/chat/completions` | `meta-llama/Llama-3.3-70B-Instruct-Turbo` | `openai` |
-| Groq | `https://api.groq.com/openai/v1/chat/completions` | `llama-3.3-70b-versatile` | `openai` |
-| Ollama (local, free) | `http://localhost:11434/v1/chat/completions` | `qwen2.5:7b` | `openai` |
-| vLLM (local) | `http://localhost:8000/v1/chat/completions` | *(your deployed model)* | `openai` |
-| Z.AI GLM | `https://api.z.ai/api/anthropic/v1/messages` | `glm-5-turbo` | `anthropic` |
-
-`protocol` is auto-detected from the endpoint URL if you omit it (`/messages` or `/anthropic/` → `anthropic`, otherwise `openai`).
-
-> 💡 **Want to switch provider after install?** Open the repo in Claude Code and just say *"change my cc-memory config to deepseek"* (or `anthropic`, `ollama`, etc.). Claude Code will edit `~/.config/cc-memory/config.json` for you.
-
-## Quick start
-
-See [INSTALL.md](./INSTALL.md) for the full guide. TL;DR:
+**Or manual:**
 
 ```bash
 git clone https://github.com/Zane456/cc-project-memory.git
@@ -79,87 +114,141 @@ cd cc-project-memory
 ./memory_system/bin/setup.sh --global --key <your-LLM-api-key>
 ```
 
-CLI cheatsheet:
+Full guide: [INSTALL.md](INSTALL.md).
+
+---
+
+## Provider Matrix
+
+9 providers, 2 protocols, **zero lock-in**:
+
+| Provider | endpoint | model (example) | protocol |
+|---|---|---|---|
+| **OpenAI** | `api.openai.com/v1/chat/completions` | gpt-4o-mini | openai |
+| **Anthropic** | `api.anthropic.com/v1/messages` | claude-haiku-4-5-20251001 | anthropic |
+| **DeepSeek** | `api.deepseek.com/v1/chat/completions` | deepseek-chat | openai |
+| **OpenRouter** | `openrouter.ai/api/v1/chat/completions` | anthropic/claude-haiku-4-5 | openai |
+| **Together** | `api.together.xyz/v1/chat/completions` | meta-llama/Llama-3.3-70B-Instruct | openai |
+| **Groq** | `api.groq.com/openai/v1/chat/completions` | llama-3.3-70b-versatile | openai |
+| **Ollama** (local, free) | `localhost:11434/v1/chat/completions` | qwen2.5:7b | openai |
+| **vLLM** (local) | `localhost:8000/v1/chat/completions` | *your model* | openai |
+| **Z.AI GLM** | `api.z.ai/api/anthropic/v1/messages` | glm-5-turbo | anthropic |
+
+Protocol is auto-detected from URL — `/messages` or `/anthropic/` → anthropic, otherwise openai.
+
+Switch provider after install? Tell Claude Code *"change my cc-memory config to deepseek"* — it edits the config for you.
+
+---
+
+## How It Works
+
+```mermaid
+sequenceDiagram
+    CC as Claude Code
+    H as Stop Hook (bash)
+    W as Python Worker
+    LLM as Your LLM
+
+    CC->>H: Turn ends → hook fires
+    H->>W: nohup detach (~10ms)
+    H-->>CC: exit 0 (instant)
+    W->>LLM: Summarize this turn
+    LLM-->>W: ~300 chars
+    W->>W: flock(LOCK_EX) → append to session.md
+```
+
+**4 things happen when Claude Code finishes a turn:**
+
+**1. Stop hook fires** — `session_end.sh` receives the turn's transcript via tmpfile.
+**2. Detaches instantly** — `nohup setsid python3 ... & disown`. Bash returns in ~10 ms. CC never waits.
+**3. LLM summarizes** — Your chosen provider generates a ~300-char summary preserving specific names, failed attempts, and decision rationale.
+**4. Appends to markdown** — `flock(LOCK_EX)` prevents concurrent writes from colliding. One file per session, multiple turn sections inside.
+
+**Two-layer storage:**
+
+| Layer | Where | Per turn | Read via |
+|---|---|---|---|
+| LLM summary (lossy, fast) | `memories/YYYY-MM-DD-<sid>.md` | ~300 chars | `ccmem find`, `/sess` |
+| CC raw transcript (lossless) | `~/.claude/projects/<sid>.jsonl` | Full text + tool I/O | `ccmem --raw`; auto on detail-seeking phrases |
+
+---
+
+## Key Numbers
+
+| Metric | Value |
+|---|---|
+| **Hooks** | 1 (Stop only) — minimal surface, maximal reliability |
+| **Hook return time** | ~10 ms (async detach, CC never waits) |
+| **Summary per turn** | ~300 chars (names, failures, decision rationale) |
+| **LLM providers** | 9+ (OpenAI · Anthropic · DeepSeek · OpenRouter · Together · Groq · Ollama · vLLM · Z.AI) |
+| **Dependencies** | 0 (Python stdlib only) |
+| **Storage** | Markdown + grep (no vector DB, no SQLite) |
+| **Capacity cap** | 200 MB, FIFO prune, last 10 sessions always kept |
+| **Crash resilience** | At most 1 turn lost (window close / Cmd+Q / segfault) |
+| **CLI subcommands** | 10 via `ccmem.py` |
+| **Codebase** | ~800 lines Python + ~100 lines Bash |
+
+---
+
+## CLI Cheatsheet
 
 ```bash
-python3 memory_system/cli/ccmem.py last-session              # last session in current project (summary)
-python3 memory_system/cli/ccmem.py last-session --raw        # ... but read CC's raw .jsonl instead
-python3 memory_system/cli/ccmem.py find "<keyword>"          # search current project's summaries
-python3 memory_system/cli/ccmem.py find "<keyword>" --raw    # search the raw .jsonl directly
-python3 memory_system/cli/ccmem.py find "<keyword>" --all    # extend to global
-python3 memory_system/cli/ccmem.py stats                     # disk usage
-python3 memory_system/cli/ccmem.py prune                     # manual FIFO prune of summaries
+ccmem last-session              # last session in current project (summary)
+ccmem last-session --raw        # read CC's raw .jsonl instead
+ccmem find "<keyword>"          # search current project summaries
+ccmem find "<keyword>" --all    # extend to global
+ccmem stats                     # disk usage
+ccmem prune                     # manual FIFO prune
 
-python3 memory_system/bin/prune_cc_transcripts.py --dry-run  # cap ~/.claude/projects at 3 GB
+# Cap ~/.claude/projects/ at 3 GB:
+python3 memory_system/bin/prune_cc_transcripts.py --dry-run
 ```
 
 In Claude Code:
-
 - `/sess` — load last session in current project
-- `/sess <keyword>` — search summaries for that keyword
-- *"what was the exact wording last time?"* — the `sess` skill detects detail-seeking phrases and switches to `--raw`
+- `/sess <keyword>` — search summaries by keyword
+- *"What was the exact error message?"* — sess skill auto-triggers `--raw` mode
 
-## Repository layout
+---
+
+## Repository Structure
 
 ```
-.
+cc-project-memory/
 ├── INSTALL.md                            # install guide (recommended entry)
 ├── DESIGN.md                             # full architecture spec
 ├── memory_system/
 │   ├── hooks/
 │   │   ├── session_end.sh                # bash detacher (~10 ms return)
 │   │   └── summarize.py                  # python worker (LLM call, md append)
-│   ├── cli/ccmem.py                      # retrieval CLI
+│   ├── cli/ccmem.py                      # retrieval CLI (10 subcommands)
 │   ├── bin/
 │   │   ├── setup.sh                      # one-shot installer
 │   │   └── prune_cc_transcripts.py       # cap ~/.claude/projects at 3 GB
 │   └── config/config.example.json
-├── skills/                               # ~/.claude/skills/ mirror (template)
-│   ├── README.md                         # install / sync instructions
-│   └── sess/SKILL.md                     # /sess language-trigger skill
+├── skills/sess/SKILL.md                  # /sess language-trigger skill template
 ├── memories/                             # LLM summaries (gitignored)
-└── docs/images/                          # the diagrams above
+└── docs/images/                          # architecture + philosophy diagrams
 ```
 
-## Key design decisions
+Full architecture: [DESIGN.md](DESIGN.md).
 
-| Question | Choice | Why |
-|---|---|---|
-| `Stop` vs `SessionEnd` hook | **Stop** (per-turn append) | Incremental, reliable: window close / `Cmd+Q` / crash all lose at most the unfinished last turn. `SessionEnd` is not always triggered (see DESIGN §3). |
-| Loop protection | Detect `stop_hook_active=true` and exit | Prevent hook from self-triggering Stop infinitely (CC docs warn explicitly). |
-| Blocking vs async | `nohup setsid python3 ... & disown` | Bash exits immediately (~10 ms); Python keeps running detached. |
-| Tmpfile vs stdin pipe | Tmpfile | Pipes break when parent exits; tmpfile is robust. |
-| File concurrency | `fcntl.flock(LOCK_EX)` | Two near-simultaneous Stops can't overwrite each other. |
-| Storage format | Markdown + frontmatter (one session = one file with multiple turn sections) | grep-friendly, human-readable, no dependencies. |
-| Summary length | ~300 chars / turn (`max_tokens=600`) | Detailed enough that another model can read just the summary and know what happened, including failed attempts. |
-| Capacity cap | `max_db_size_mb=200`, FIFO prune to 90 %, **never delete the newest 10** | Prevent unbounded disk growth. |
-| Config location | `~/.config/cc-memory/config.json` (chmod 600) | User-private, not in repo. |
-| Failure handling | LLM error → log to `~/.config/cc-memory/failures/`, never propagate to CC | Always `exit 0`. |
+---
 
-## Security
+<div align="center">
 
-- **API key never enters git**: stored in `~/.config/cc-memory/config.json` (chmod 600); `.gitignore` also catches `**/config.json` as a safety net.
-- **`memories/` is gitignored by default.** To version-control, point it at a separate private repo (this author's setup uses [Zane456/my-project-memory](https://github.com/Zane456)) or remove the gitignore entry.
-- **Logs do not contain the API key**, but periodically clean `~/.config/cc-memory/logs/`.
+> *"Write auto. Read manual. That's the whole trick."*
 
-## Troubleshooting
+<br>
 
-```bash
-# worker logs
-tail -f ~/.config/cc-memory/logs/worker.log
+Built by **Zane456** — [GitHub](https://github.com/Zane456)
 
-# per-invocation detacher logs
-ls -lt ~/.config/cc-memory/logs/run-*.log | head
+<br>
 
-# manual trigger (bypassing Claude Code)
-echo '{"session_id":"manual","transcript_path":"/tmp/fake.jsonl","reason":"test","last_assistant_message":"a smoke-test message long enough to clear the min_assistant_chars threshold"}' \
-    | bash ./memory_system/hooks/session_end.sh
-sleep 2
-tail ~/.config/cc-memory/logs/worker.log
+⭐ If this helps your Claude Code workflow, star the repo — it helps others find it.
 
-# searched but found nothing? cwd may have moved:
-python3 ./memory_system/cli/ccmem.py list -n 5             # check the cwd field
-python3 ./memory_system/cli/ccmem.py find "<kw>" --all     # extend to global
-```
+<br><br>
 
-Full architecture: [DESIGN.md](./DESIGN.md).
+MIT License © [Zane456](https://github.com/Zane456)
+
+</div>
