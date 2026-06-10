@@ -1,165 +1,221 @@
+[English](README.md) | 简体中文
+
+<div align="center">
+
 # cc-memory
 
-> 🌐 [English](./README.md) · **中文**
+<p align="center">
+  <img src="assets/hero-zh.png" alt="cc-memory — 给 Claude Code 的会话记忆与使用统计" width="640" />
+</p>
 
-一套为 Claude Code 设计的轻量级**逐轮**会话记忆系统。Claude 每回完一轮，`Stop` hook 触发，后台 Python worker 调**你自己挑的 LLM**（OpenAI / Anthropic / DeepSeek / OpenRouter / 本地 Ollama / Z.AI 等任何 OpenAI Chat Completions 或 Anthropic Messages 端点——见下面的 [Provider 矩阵](#provider-矩阵)）总结这一轮，append 到当前 session 的 markdown 文件。下次开新 session **不自动注入历史**——你显式用 `/sess` 拉，或者随口说"上次原话是怎么说的"，`sess` skill 会自动切到 `--raw` 模式读原文。
+> *「写要自动而廉价，读要显式而可控。」*
 
-> 📦 **想直接装？** 看 [INSTALL.md](./INSTALL.md)——推荐"让 Claude Code 帮你装"路径，3 分钟完事。
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Language: Python](https://img.shields.io/badge/Python-3.10+-blue.svg)]()
+[![Platform: Claude Code](https://img.shields.io/badge/Platform-Claude%20Code-blueviolet.svg)]()
+[![Dependencies: 0](https://img.shields.io/badge/依赖-纯标准库-green.svg)]()
 
-![架构](./docs/images/architecture.png)
+<br>
 
-## 为什么这样设计
+**给 Claude Code 的逐轮会话记忆 + 终身使用统计。**
 
-![理念](./docs/images/philosophy.png)
+<br>
 
-设计灵感来自 [thedotmack/claude-mem](https://github.com/thedotmack/claude-mem)，但有两处反共识取舍：
+1 个 Stop hook、1 个你自己挑的 LLM、一堆纯 markdown 文件。<br>
+每轮对话后台自动总结；不问就一个 token 都不进你的上下文。<br>
+顺手还把你每一次 skill / MCP 调用记成永久流水——这些数据 Claude Code 自己 30 天就删了。
+
+<br>
+
+[看效果](#看效果) · [安装](#安装) · [用数字说话](#用数字说话) · [工作原理](#工作原理)
+
+</div>
+
+---
+
+## 看效果
+
+**随时召回任何历史 session，不用每次开机都交"上下文税"：**
+
+```text
+你     ❯ /sess dab 变换器
+Claude ❯ 找到了——2026-05-24，本项目：
+         轮次 3：调 DAB 仿真移相角；0.3 p.u. 负载以下丢 ZVS。
+         先试了降 fs（失败——磁件饱和），最终把死区 180 ns → 240 ns 解决。
+你     ❯ 当时报错原话是什么？
+Claude ❯ （sess 自动切 --raw 读原始 transcript）"Derivative of state '1'
+         in block ... at time 0.00132 is not finite."
+```
+
+历史不会被塞进每个新 session。记忆躺在磁盘上，**你拉它才进来**——先给摘要，要原话再下钻无损原文。
+
+**`/ccskill`、`/ccmcp` 一眼看清你真正在用什么工具：**
+
+```text
+$ ccmem mcp-stats          # ← Claude Code 里输 /ccmcp
+MCP server     次数    首次        最近        top tools
+matlab         10686  2026-05-12  2026-06-10  evaluate_matlab_code×9670
+tavily           706  2026-05-11  2026-06-09  tavily_search×615
+filesystem       244  2026-05-14  2026-06-07  read_file×142
+...
+共 18 个 MCP server，总调用 12232 次
+```
+
+Claude Code 的原始 transcript 30 天就清掉，这份流水**永久保留**。作者自己一查才发现：一个 MCP server 占了全部调用的 87 %，另外三个纯吃灰。
+
+---
+
+## 为什么这么设计
+
+借鉴 [claude-mem](https://github.com/thedotmack/claude-mem)，两处刻意反着来：
+
+![设计哲学：写自动而廉价，读显式而可控](docs/images/philosophy.png)
 
 | 维度 | claude-mem | cc-memory |
 |---|---|---|
-| Hook 数量 | 5 个（SessionStart / UserPromptSubmit / PostToolUse / Stop / SessionEnd） | **1 个（仅 Stop，每轮 append）** |
-| 写入时机 | session 期间持续观察 | **每轮一次**——CC 怎么挂都最多丢未完成那轮 |
-| 总结引擎 | Claude agent-sdk | **你自己挑 LLM**（OpenAI / Anthropic / DeepSeek / 本地 Ollama / Z.AI 等） |
-| SessionStart 自动注入 | 是 | **否**——手动 `/sess` |
-| 存储 | SQLite + Chroma 向量库 | **markdown 文件 + grep** |
+| Hook 数量 | 5 个（SessionStart / UserPromptSubmit / PostToolUse / Stop / SessionEnd） | **1 个**（Stop，逐轮 append） |
+| 崩溃代价 | 取决于 SessionEnd 有没有触发 | **最多丢没答完的最后一轮** |
+| 总结引擎 | Claude agent-sdk | **你已有的任何 LLM，或本地免费模型** |
+| 新 session 自动注入 | 有 | **没有——显式 `/sess`** |
+| 存储 | SQLite + Chroma 向量库 | **markdown + grep** |
 
-### 1. 不做跨项目记忆 ❌
+1. **不自动注入。** 上下文窗口是 session 里最稀缺的资源。自动注入 = 每次开机都被强制扣一笔"可能用不上的历史"税，连"这次要不要历史"的判断权都被拿走了。
+2. **默认不跨项目检索。** 认真用 Claude Code 的人本来就按项目组织工作；跨项目语义检索捞回来的多半是同名不同义的噪声。`/sess` 默认锁当前项目，`--all` 按需放开。
 
-claude-mem 用向量库做"跨所有项目"的语义检索，听起来很酷。但**真正会用 CC 的人本身就会做好项目管理**——每个项目都有自己的 `CLAUDE.md`、自己的文档、自己的代码。跨项目搜回来的多数是**伪相关**信号（关键词撞车、概念名字一样实质不同），反而稀释当前项目的判断。
+---
 
-→ cc-memory 默认按 `cwd` 隔离记忆。`/sess` 优先在当前项目里找，加 `--all` 才扩到全局。**不预设"你需要跨项目"。**
+## 用数字说话
 
-### 2. 不在 SessionStart 自动注入历史 ❌
+| 指标 | 数值 |
+|---|---|
+| **需要的 hook** | 1 个——只有 Stop |
+| **hook 延迟** | ~10 ms（worker 后台拆离，CC 零等待） |
+| **崩溃 / `Cmd+Q` 丢多少** | 最多 1 轮（没答完的那轮） |
+| **pip 安装** | 0 个——纯 Python 标准库（urllib + json + fcntl） |
+| **代码总量** | 2230 行，一下午能整体读完 |
+| **单轮摘要** | ~300 字，按"别的模型只看摘要就能接手"标准写 |
+| **LLM provider** | 9+ 家（OpenAI / Anthropic / DeepSeek / OpenRouter / Together / Groq / Ollama / vLLM / 智谱），2 套协议自动嗅探 |
+| **每 session 注入的上下文** | 0 token，除非你主动拉 |
+| **使用统计保留期** | 无限——不受 Claude Code 30 天 transcript 清理影响 |
+| **安装耗时** | ~3 分钟，让 Claude Code 自己装 |
 
-claude-mem 每次开新会话时，自动把上一次 session 的摘要塞进 context window。**但 context window 是稀缺资源**——不是每次开会话都需要上次的历史。自动注入意味着每次都默认付一笔"可能用不上的上下文"的税，稀释当前任务的信号；当对话足够长，这笔税会逼你提前 compact，反而损失更重要的信息。
+---
 
-更糟的是它**剥夺了用户的判断**：连"要不要带历史"都替你决定了。
+## 工作原理
 
-→ cc-memory 把"加载历史"做成**显式动作**：写入是后台自动的（每轮 append），但读取由你主动触发——`/sess` 接着上次聊，`/sess <keyword>` 查具体话题。不需要就让记忆静静躺在磁盘上。
+![cc-memory 架构：Stop hook、后台 worker、LLM 总结、markdown 存储](docs/images/architecture.png)
 
-两个取舍合起来一句话：**写入应该自动且廉价，读取应该显式且可控**。
+```mermaid
+graph LR
+    A[Claude 答完一轮] --> B[Stop hook<br>~10 ms 拆离]
+    B --> C[后台 worker]
+    C --> D[你挑的 LLM<br>总结这一轮]
+    C --> E[skill_usage.jsonl<br>skill + MCP 调用流水]
+    D --> F[memories/日期-session.md]
+    F --> G["/sess 显式召回"]
+    E --> H["/ccskill · /ccmcp 使用统计"]
+```
 
-## 双层存储
+**1. 拆离** —— Claude 答完一轮，Stop hook 把事件写进临时文件、fork 出后台 Python worker，~10 ms 内返回。CC 全程不阻塞。
 
-cc-memory 写自己的 LLM 摘要；**Claude Code 自己另写一份完整原始 transcript**（`/resume`、`/continue` 这类功能依赖它）。cc-memory 的 `--raw` 模式就读这一份。
+**2. 总结** —— worker 从 CC 的 transcript 抽出这一轮，调你配置的 LLM（OpenAI Chat 或 Anthropic Messages 任一协议端点）写 ~300 字摘要；失败和绕过的弯路也写，不只记最终方案。
 
-| 层 | 位置 | 格式 | 单轮大小 | 怎么读 |
-|---|---|---|---|---|
-| LLM 摘要（有损、快） | `<repo>/memories/YYYY-MM-DD-<sid>.md` | markdown + frontmatter | ~300 字 | `ccmem find / last-session`、`/sess` |
-| CC 原始 transcript（无损、大） | `~/.claude/projects/<encoded-cwd>/<sid>.jsonl` | line-delimited JSON | 完整对话 + 工具 I/O | `ccmem ... --raw`；`/sess` 在用户说"原话/具体细节/原文"时自动走 `--raw` |
+**3. 追加** —— 一个 session 一个 markdown 文件，frontmatter + 逐轮分节，fcntl 排它锁防并发；容量超限 FIFO 剪枝，不吃磁盘。
 
-CC 的原始 transcript 会无限膨胀（CC 自己不删）。cc-memory 自带 `memory_system/bin/prune_cc_transcripts.py`，默认把 `~/.claude/projects/` 卡在 3 GB（可调），按 mtime 升序删最旧，保护最近 24 小时活跃的文件。
+**4. 记流水** —— 顺路把这一轮里每次 `Skill`、`mcp__*` 工具调用追加进 `skill_usage.jsonl`，按 tool-call id 去重。不加新 hook，不花 LLM 钱。
 
-## Provider 矩阵
+读是另一条显式路径：`/sess` 查记忆，`/ccskill` `/ccmcp` 查使用统计，`--raw` 下钻 CC 无损原文。
 
-cc-memory 说 **OpenAI Chat Completions** 或 **Anthropic Messages** 协议——基本覆盖所有现代 LLM 提供商，付费的免费的本地的都行。挑一个填到 `~/.config/cc-memory/config.json`：
+---
 
-| 提供商 | `endpoint` | `model`（示例） | `protocol` |
-|---|---|---|---|
-| OpenAI | `https://api.openai.com/v1/chat/completions` | `gpt-4o-mini` | `openai` |
-| Anthropic | `https://api.anthropic.com/v1/messages` | `claude-haiku-4-5-20251001` | `anthropic` |
-| DeepSeek | `https://api.deepseek.com/v1/chat/completions` | `deepseek-chat` | `openai` |
-| OpenRouter | `https://openrouter.ai/api/v1/chat/completions` | `anthropic/claude-haiku-4-5` | `openai` |
-| Together | `https://api.together.xyz/v1/chat/completions` | `meta-llama/Llama-3.3-70B-Instruct-Turbo` | `openai` |
-| Groq | `https://api.groq.com/openai/v1/chat/completions` | `llama-3.3-70b-versatile` | `openai` |
-| Ollama（本地、免费） | `http://localhost:11434/v1/chat/completions` | `qwen2.5:7b` | `openai` |
-| vLLM（本地） | `http://localhost:8000/v1/chat/completions` | *（你部署的 model id）* | `openai` |
-| Z.AI GLM | `https://api.z.ai/api/anthropic/v1/messages` | `glm-5-turbo` | `anthropic` |
-
-`protocol` 不写也行——worker 会从 endpoint URL 自动嗅探（`/messages` 或 `/anthropic/` → `anthropic`，否则 `openai`）。
-
-> 💡 **装完想换 provider？** 直接在 Claude Code 里说 *"把我的 cc-memory 配置换成 deepseek"*（或 `anthropic`、`ollama` 等），Claude 会帮你改 `~/.config/cc-memory/config.json`。
-
-## 快速开始
-
-完整步骤见 [INSTALL.md](./INSTALL.md)。简版：
+## 安装
 
 ```bash
 git clone https://github.com/Zane456/cc-project-memory.git
 cd cc-project-memory
-./memory_system/bin/setup.sh --global --key <你的-LLM-api-key>
+claude
 ```
 
-CLI 速查：
+进 Claude Code 后粘贴：
+
+> 请按本 repo 根目录 `INSTALL.md` 第 3 节"标准化安装步骤"帮我装 cc-memory。我用全局模式（`--global`）。每完成一步打勾汇报，遇到意外停下来问我。
+
+hook、config、`/sess` `/ccskill` `/ccmcp` 三个 skill 全由 Claude Code 自己配好。手动安装路径和完整 [Provider 矩阵](INSTALL.md#provider-矩阵)（OpenAI / Anthropic / DeepSeek / Ollama / …）见 [INSTALL.md](INSTALL.md)。
+
+以后想换 provider，对 Claude Code 说一句"把我的 cc-memory 配置换成 deepseek"就行。
+
+---
+
+## 日常用法
+
+| 你输入 | 你得到 |
+|---|---|
+| `/sess` | 本项目上个 session 的摘要全文 |
+| `/sess <关键词>` | 搜本项目历史记忆 |
+| `/sess all 3` | 跨所有项目最近 3 个 session |
+| 「上次原话是怎么说的？」 | sess 自动切 `--raw` 读原始 transcript |
+| `/ccskill` | 你调过的每个 skill：次数 / 首次 / 最近 / 项目数 |
+| `/ccmcp` | MCP server 排行，附每家 top 工具 |
+
+同一份数据也能在 shell 里直接跑：
 
 ```bash
-python3 memory_system/cli/ccmem.py last-session              # 当前项目最近一次（摘要）
-python3 memory_system/cli/ccmem.py last-session --raw        # 改读 CC 原始 jsonl
-python3 memory_system/cli/ccmem.py find "<关键词>"            # 在当前项目摘要里搜
-python3 memory_system/cli/ccmem.py find "<关键词>" --raw      # 直接搜原始 jsonl
-python3 memory_system/cli/ccmem.py find "<关键词>" --all      # 扩到全局
-python3 memory_system/cli/ccmem.py stats                     # 占用情况
-python3 memory_system/cli/ccmem.py prune                     # 摘要 FIFO 剪枝
-
-python3 memory_system/bin/prune_cc_transcripts.py --dry-run  # 把 ~/.claude/projects 卡到 3 GB
+python3 memory_system/cli/ccmem.py last-session            # 摘要
+python3 memory_system/cli/ccmem.py find "<关键词>" --raw    # 无损搜索
+python3 memory_system/cli/ccmem.py skill-stats --by day    # 使用趋势
+python3 memory_system/cli/ccmem.py mcp-stats               # MCP 排行
 ```
 
-在 Claude Code 里：
+---
 
-- `/sess`——加载当前项目最近一次会话
-- `/sess <关键词>`——按关键词搜摘要
-- 「上次那个 bug 的原话是什么」——sess skill 检测到"原话/详情"等触发词，自动切 `--raw`
+## 隐私（结构上保证，不靠自觉）
 
-## 目录结构
+- **记忆不出你的机器。** `memories/` 默认 gitignore；摘要和流水都是本地纯文本，随便看、grep、改、删。
+- **API key 进不了 git** —— 存在 `~/.config/cc-memory/config.json`（chmod 600），`.gitignore` 还兜底拦截一切误入的 `config.json`。
+- **失败不打扰** —— LLM 报错只写本地日志，hook 永远 exit 0，绝不弄坏你的 Claude Code session。
+
+---
+
+## 仓库结构
 
 ```
-.
-├── INSTALL.md                            # 安装指引（推荐入口）
-├── DESIGN.md                             # 完整设计方案
+cc-project-memory/
+├── INSTALL.md                       # 安装指南（从这里开始）
 ├── memory_system/
-│   ├── hooks/
-│   │   ├── session_end.sh                # bash 拆离器（~10 ms 返回）
-│   │   └── summarize.py                  # python worker（调 LLM、写 md）
-│   ├── cli/ccmem.py                      # 检索 CLI
-│   ├── bin/
-│   │   ├── setup.sh                      # 一次性安装脚本
-│   │   └── prune_cc_transcripts.py       # 把 ~/.claude/projects 卡到 3 GB
-│   └── config/config.example.json
-├── skills/                               # ~/.claude/skills/ 镜像（模板）
-│   ├── README.md                         # 安装/同步说明
-│   └── sess/SKILL.md                     # /sess 语言触发 skill
-├── memories/                             # LLM 摘要（gitignored）
-└── docs/images/                          # 上面那两张图
+│   ├── hooks/session_end.sh         # 10 ms 拆离器
+│   ├── hooks/summarize.py           # 后台 worker：总结 + 记流水
+│   ├── skill_usage.py               # skill/MCP 调用抽取共享模块（132 行）
+│   ├── cli/ccmem.py                 # 检索 + 统计 CLI
+│   └── bin/prune_cc_transcripts.py  # 给 ~/.claude/projects 封顶
+├── skills/                          # /sess · /ccskill · /ccmcp 模板
+├── memories/                        # 你的摘要（gitignore）
+└── docs/images/
 ```
 
-## 关键设计决策
+完整架构推演：[DESIGN.md](DESIGN.md)。
 
-| 问题 | 选择 | 理由 |
-|---|---|---|
-| `Stop` vs `SessionEnd` hook | **Stop**（每轮 append） | 增量、可靠：关窗 / Cmd+Q / 崩溃都最多丢"未完成的最后一轮"。`SessionEnd` 反而不一定触发（见 DESIGN §3）|
-| 死循环防护 | 检测 `stop_hook_active=true` 就 return | 避免 hook 自身引发的 Stop 再触发 worker 无限套娃（CC 文档明确警告）|
-| 阻塞 vs 异步 | `nohup setsid python3 ... & disown` | bash 立即 exit 0（~10 ms），python 独立会话继续跑 |
-| tmpfile vs stdin pipe | tmpfile | pipe 在父进程退出时会断，文件最稳 |
-| 文件并发 | `fcntl.flock(LOCK_EX)` | 两个 Stop 几乎同时触发也不会相互覆盖 |
-| 存储格式 | markdown + frontmatter（一 session 一文件，多轮次段） | grep 友好，人眼可读，无依赖 |
-| 摘要长度 | ~300 字 / 轮（`max_tokens=600`） | 详尽到让别的模型只看摘要就能知道发生了什么、踩过哪些坑 |
-| 容量上限 | `max_db_size_mb=200`，FIFO 剪枝到 90%，**最新 10 条永不删** | 防止长期累积爆盘 |
-| 配置位置 | `~/.config/cc-memory/config.json`（chmod 600） | 用户私有，不进 repo |
-| 失败处理 | LLM 调用失败 → 写到 `~/.config/cc-memory/failures/`，永不传回 CC | 永远 `exit 0` |
+---
 
-## 安全
+<div align="center">
 
-- **API key 不入 git**：存在 `~/.config/cc-memory/config.json`（chmod 600）；`.gitignore` 也兜底忽略 `**/config.json`。
-- **memories 默认不入 git**。要版本化的话，把 `memories/` 指到一个独立的 private repo（作者本人的做法），或删 `.gitignore` 里那行。
-- **日志不含 key**，但建议定期清理 `~/.config/cc-memory/logs/`。
+<br>
 
-## 故障排查
+*写要自动而廉价，读要显式而可控。*
 
-```bash
-# worker 日志
-tail -f ~/.config/cc-memory/logs/worker.log
+<br>
 
-# 每次 hook 拆离日志（按时间戳）
-ls -lt ~/.config/cc-memory/logs/run-*.log | head
+⭐ 如果 cc-memory 帮你记住过什么，点个 star。
 
-# 手动触发一次（绕过 CC）
-echo '{"session_id":"manual","transcript_path":"/tmp/fake.jsonl","reason":"test","last_assistant_message":"足够长的烟雾测试消息，超过 min_assistant_chars 阈值才会触发 LLM 调用"}' \
-    | bash ./memory_system/hooks/session_end.sh
-sleep 2
-tail ~/.config/cc-memory/logs/worker.log
+<br>
 
-# 搜不到？可能是 cwd 变了（搬过项目目录）：
-python3 ./memory_system/cli/ccmem.py list -n 5             # 看最近几条的 cwd 字段
-python3 ./memory_system/cli/ccmem.py find "<关键词>" --all  # 不限当前项目
-```
+**Zane456** —— 电力电子方向研究者，每天用 Claude Code 干活
 
-完整架构见 [DESIGN.md](./DESIGN.md)。
+| 平台 | 链接 |
+| :--- | :--- |
+| 🐙 GitHub | [@Zane456](https://github.com/Zane456) |
+
+<br>
+
+MIT License © [Zane456](https://github.com/Zane456)
+
+</div>
