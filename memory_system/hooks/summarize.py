@@ -31,6 +31,12 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+try:
+    import skill_usage  # memory_system/skill_usage.py，skill 调用流水（与 ccmem 共用）
+except Exception:
+    skill_usage = None  # 统计是附属功能，缺了不影响总结主流程
+
 # ────────────────────────────────────────────────────────────────────────────
 # 路径与默认值
 # ────────────────────────────────────────────────────────────────────────────
@@ -240,7 +246,9 @@ def extract_last_turn(
         asst_text = asst_text[: asst_truncate] + "…（截断）"
 
     read = [f for f in read if f not in seen_mod]
-    return {"user_text": user_text, "assistant_text": asst_text, "modified": modified, "read": read}
+    skill_events = skill_usage.extract_events(lines[user_idx:]) if skill_usage else []
+    return {"user_text": user_text, "assistant_text": asst_text, "modified": modified,
+            "read": read, "skill_events": skill_events}
 
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -756,6 +764,19 @@ def main(payload_file: str) -> int:
         user_truncate=cfg.get("user_text_truncate_chars", 4000),
         asst_truncate=cfg.get("assistant_text_truncate_chars", 4000),
     )
+
+    # skill 调用流水：在节流之前落盘（/clear 这类短回复轮次也要计数），失败不影响总结
+    if skill_usage and turn.get("skill_events"):
+        try:
+            for ev in turn["skill_events"]:
+                ev["session_id"] = ev["session_id"] or str(event.get("session_id") or "")
+                ev["cwd"] = ev["cwd"] or str(event.get("cwd") or "")
+            n = skill_usage.append_events(
+                skill_usage.usage_path(_memories_dir(cfg)), turn["skill_events"])
+            if n:
+                log.info("skill usage recorded: %d event(s)", n)
+        except Exception as e:
+            log.warning("skill usage record failed: %s", e)
 
     # 二次节流：抽完仍然太短
     if len(turn["assistant_text"]) < min_chars:

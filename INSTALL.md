@@ -4,7 +4,7 @@
 
 1. **`~/.config/cc-memory/config.json`** — 你挑的 LLM provider（OpenAI / Anthropic / DeepSeek / 本地 Ollama / Z.AI 等任一）的 endpoint + model + api_key（**不在 repo，必须本机生成**）
 2. **`~/.claude/settings.json` 的 Stop hook** — 让 Claude Code 每轮调本系统的 worker
-3. **`/sess` skill 装到 `~/.claude/skills/sess/`** — 语言触发的会话检索能力
+3. **skill 装到 `~/.claude/skills/`** — `/sess`（会话检索）+ `/ccskill` `/ccmcp`（skill / MCP 使用统计）
 4. **（可选）`~/.claude/projects/` 容量上限** — 用 cron/launchd 定时跑 `prune_cc_transcripts.py`
 
 下面 2 种装法，**任选其一**。
@@ -122,6 +122,8 @@ ls -lt <repo>/memories/                 # 应当有今天日期的 .md 文件
 > /sess                                  # 加载上次会话摘要
 > /sess <关键词>                         # 搜某个话题（当前项目）
 > 上次那个 bug 的原话是什么              # 自动触发 sess skill 走 --raw
+> /ccskill                               # skill 使用统计（全部历史）
+> /ccmcp                                 # MCP 使用统计（全部历史）
 ```
 
 ---

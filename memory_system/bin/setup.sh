@@ -294,17 +294,21 @@ MD
     chmod 644 "$USER_CMDS/sess.md"
     echo "✓ /sess slash 命令写入 $USER_CMDS/sess.md（绝对路径版本）"
 
-    # 3) 安装 /sess skill（语言触发版，比 slash 命令更智能；模板里有 <CC_MEMORY_REPO> 占位符）
+    # 3) 安装全部 skill 模板（/sess /ccskill /ccmcp；模板里有 <CC_MEMORY_REPO> 占位符）
     USER_SKILLS="$USER_DIR/skills"
-    SESS_TPL="$INSTALL_ROOT/skills/sess/SKILL.md"
-    if [ -f "$SESS_TPL" ]; then
-        mkdir -p "$USER_SKILLS/sess"
+    INSTALLED_SKILLS=0
+    for TPL in "$INSTALL_ROOT"/skills/*/SKILL.md; do
+        [ -f "$TPL" ] || continue
+        SKILL_NAME="$(basename "$(dirname "$TPL")")"
+        mkdir -p "$USER_SKILLS/$SKILL_NAME"
         # 把占位符替换成本机 cc-memory 安装绝对路径
-        sed "s|<CC_MEMORY_REPO>|$INSTALL_ROOT|g" "$SESS_TPL" > "$USER_SKILLS/sess/SKILL.md"
-        chmod 644 "$USER_SKILLS/sess/SKILL.md"
-        echo "✓ /sess skill 写入 $USER_SKILLS/sess/SKILL.md（占位符已替换为 $INSTALL_ROOT）"
-    else
-        echo "⚠ skills/sess/SKILL.md 模板不存在（可能 repo 不完整），跳过 skill 安装"
+        sed "s|<CC_MEMORY_REPO>|$INSTALL_ROOT|g" "$TPL" > "$USER_SKILLS/$SKILL_NAME/SKILL.md"
+        chmod 644 "$USER_SKILLS/$SKILL_NAME/SKILL.md"
+        echo "✓ /$SKILL_NAME skill 写入 $USER_SKILLS/$SKILL_NAME/SKILL.md（占位符已替换为 $INSTALL_ROOT）"
+        INSTALLED_SKILLS=$((INSTALLED_SKILLS + 1))
+    done
+    if [ "$INSTALLED_SKILLS" -eq 0 ]; then
+        echo "⚠ skills/*/SKILL.md 模板不存在（可能 repo 不完整），跳过 skill 安装"
     fi
 
     echo

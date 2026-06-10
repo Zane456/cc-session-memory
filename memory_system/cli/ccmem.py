@@ -31,6 +31,7 @@ import json
 import os
 import re
 import sys
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -599,6 +600,142 @@ def cmd_prune(args: argparse.Namespace) -> int:
     return 0
 
 
+def _import_skill_usage():
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    import skill_usage  # type: ignore
+    return skill_usage
+
+
+def _backfill_skill_usage(su, path: Path) -> None:
+    """扫 ~/.claude/projects 全部原始 transcript，把历史 skill 调用补进流水（按 key 去重）。"""
+    files = sorted(CC_PROJECTS_DIR.rglob("*.jsonl")) if CC_PROJECTS_DIR.is_dir() else []
+    events: list[dict[str, Any]] = []
+    for f in files:
+        try:
+            lines: list[dict[str, Any]] = []
+            with f.open(encoding="utf-8", errors="replace") as fh:
+                for line in fh:
+                    # 快筛：绝大多数行无关，先按子串跳过再 json 解析
+                    if ('"Skill"' not in line and "<command-name>" not in line
+                            and '"mcp__' not in line):
+                        continue
+                    try:
+                        lines.append(json.loads(line))
+                    except json.JSONDecodeError:
+                        continue
+            events.extend(su.extract_events(lines))
+        except OSError:
+            continue
+    added = su.append_events(path, events)
+    print(f"回填完成：扫描 {len(files)} 个 transcript，捕获 {len(events)} 次调用，"
+          f"新写入 {added} 条（其余已记录过）\n")
+
+
+def cmd_skill_stats(args: argparse.Namespace) -> int:
+    """skill 调用统计。数据 = Stop hook 实时流水 + （可选）--backfill 回填的历史 transcript。
+    默认过滤 CC 内置命令（/clear 等），--all 显示全部；--by day/month 看时间分布。"""
+    su = _import_skill_usage()
+    path = su.usage_path(memories_dir())
+
+    if args.backfill:
+        _backfill_skill_usage(su, path)
+
+    events = su.load_events(path)
+    if not events:
+        print("还没有 skill 调用记录。先跑 `ccmem skill-stats --backfill` 回填历史，"
+              "之后 Stop hook 会自动持续记录。")
+        return 0
+
+    events = [e for e in events if e.get("source") != "mcp"]  # MCP 走 mcp-stats
+    if not args.all_:
+        events = [e for e in events if e["skill"] not in su.BUILTIN_COMMANDS]
+    if args.source:
+        events = [e for e in events if e.get("source") == args.source]
+    if args.days:
+        cutoff = (datetime.now() - timedelta(days=args.days)).strftime("%Y-%m-%d")
+        events = [e for e in events if e.get("date", "") >= cutoff]
+    if args.here or args.cwd:
+        target = _normalize_path(args.cwd or os.getcwd())
+        events = [e for e in events if e.get("cwd") and _cwd_matches(e["cwd"], target)]
+
+    if not events:
+        print("（筛选条件下没有记录）")
+        return 0
+
+    if args.by == "skill":
+        agg: dict[str, dict[str, Any]] = {}
+        for e in events:
+            s = agg.setdefault(e["skill"], {"count": 0, "first": "9999", "last": "0000",
+                                            "projects": set()})
+            s["count"] += 1
+            d = e.get("date") or ""
+            if d:
+                s["first"] = min(s["first"], d)
+                s["last"] = max(s["last"], d)
+            if e.get("cwd"):
+                s["projects"].add(e["cwd"])
+        rows = sorted(agg.items(), key=lambda kv: -kv[1]["count"])
+        print(f"{'skill':<32}{'次数':>5}  {'首次':<12}{'最近':<12}{'项目数':>4}")
+        for name, s in rows:
+            print(f"{name:<32}{s['count']:>5}  {s['first']:<12}{s['last']:<12}"
+                  f"{len(s['projects']):>4}")
+        print(f"\n共 {len(rows)} 个 skill，总调用 {len(events)} 次")
+    else:
+        # 按日 / 月看时间分布
+        keylen = 10 if args.by == "day" else 7
+        agg2: dict[str, dict[str, int]] = {}
+        for e in events:
+            d = (e.get("date") or "unknown")[:keylen]
+            agg2.setdefault(d, {})
+            agg2[d][e["skill"]] = agg2[d].get(e["skill"], 0) + 1
+        print(f"{'日期':<12}{'次数':>5}  top skills")
+        for d in sorted(agg2, reverse=True):
+            counts = agg2[d]
+            top = sorted(counts.items(), key=lambda kv: -kv[1])[:3]
+            top_s = ", ".join(f"{k}×{v}" for k, v in top)
+            print(f"{d:<12}{sum(counts.values()):>5}  {top_s}")
+        print(f"\n共 {len(agg2)} 个{'天' if args.by == 'day' else '月'}，总调用 {len(events)} 次")
+    return 0
+
+
+def cmd_mcp_stats(args: argparse.Namespace) -> int:
+    """MCP 工具调用统计，按 server 聚合，行内列 top tools。--backfill 同 skill-stats。"""
+    su = _import_skill_usage()
+    path = su.usage_path(memories_dir())
+
+    if args.backfill:
+        _backfill_skill_usage(su, path)
+
+    events = [e for e in su.load_events(path) if e.get("source") == "mcp"]
+    if not events:
+        print("还没有 MCP 调用记录。先跑 `ccmem mcp-stats --backfill` 回填历史，"
+              "之后 Stop hook 会自动持续记录。")
+        return 0
+
+    agg: dict[str, dict[str, Any]] = {}
+    for e in events:
+        parts = e["skill"].split("__", 2)  # mcp__server__tool
+        server = parts[1] if len(parts) >= 2 else e["skill"]
+        tool = parts[2] if len(parts) == 3 else "?"
+        s = agg.setdefault(server, {"count": 0, "first": "9999", "last": "0000",
+                                    "tools": {}})
+        s["count"] += 1
+        d = e.get("date") or ""
+        if d:
+            s["first"] = min(s["first"], d)
+            s["last"] = max(s["last"], d)
+        s["tools"][tool] = s["tools"].get(tool, 0) + 1
+
+    rows = sorted(agg.items(), key=lambda kv: -kv[1]["count"])
+    print(f"{'MCP server':<24}{'次数':>5}  {'首次':<12}{'最近':<12}top tools")
+    for server, s in rows:
+        top = sorted(s["tools"].items(), key=lambda kv: -kv[1])[:3]
+        top_s = ", ".join(f"{k}×{v}" for k, v in top)
+        print(f"{server:<24}{s['count']:>5}  {s['first']:<12}{s['last']:<12}{top_s}")
+    print(f"\n共 {len(rows)} 个 MCP server，总调用 {len(events)} 次")
+    return 0
+
+
 def cmd_find(args: argparse.Namespace) -> int:
     """关键词搜索 + 拼出命中 session 的完整 markdown，按 timestamp 降序。
     --section-only：只输出命中关键词的 ## 轮次 段，省略其余轮次。
@@ -734,18 +871,25 @@ def cmd_find(args: argparse.Namespace) -> int:
 
 def cmd_last_session(args: argparse.Namespace) -> int:
     """输出当前 cwd 范围内最近 N 个 session 的完整记忆，带边界标记。
+    --all：不限制项目，跨所有 cwd 取最近 N 个 session。
     --max-bytes N：跨 session 累计输出预算，超出后整个 session 跳过并提示。
                    单个 session 内不切碎（保持 markdown 完整性）。"""
-    target = _normalize_path(args.cwd or os.getcwd())
+    target = None if getattr(args, "all_", False) else _normalize_path(args.cwd or os.getcwd())
     pairs: list[tuple[Path, dict[str, Any]]] = []
     for p in iter_memories():
         fm = parse_frontmatter(p)
+        if target is None:
+            pairs.append((p, fm))
+            continue
         mc = fm.get("cwd")
         if isinstance(mc, str) and _cwd_matches(mc, target):
             pairs.append((p, fm))
 
     if not pairs:
-        print("该项目目录下还没有历史 session 记录（首次在这里使用 cc-memory？）。")
+        if target is None:
+            print("（cc-memory 还没有任何 session 记录）")
+        else:
+            print("该项目目录下还没有历史 session 记录（首次在这里使用 cc-memory？）。")
         return 0
 
     # 按 timestamp 降序
@@ -788,11 +932,12 @@ def cmd_last_session(args: argparse.Namespace) -> int:
     for i, (p, fm) in enumerate(pairs, 1):
         if state["exceeded"]:
             break
+        scope_label = "全局，跨所有项目" if target is None else f"来自项目目录：{target}"
         if total > 1:
             ordinal = "最新" if i == 1 else f"倒数第 {i}"
-            title = f"📌 上 {total} 个 Session（第 {i} 个，{ordinal}）（来自项目目录：{target}）"
+            title = f"📌 上 {total} 个 Session（第 {i} 个，{ordinal}）（{scope_label}）"
         else:
-            title = f"📌 上个 Session 的内容（来自项目目录：{target}）"
+            title = f"📌 上个 Session 的内容（{scope_label}）"
 
         sid = fm.get("session_id", "?")
         sid = sid if isinstance(sid, str) else "?"
@@ -897,6 +1042,27 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("stats", help="显示总条数、占用、上限百分比").set_defaults(func=cmd_stats)
 
+    pss = sub.add_parser("skill-stats",
+                         help="skill 调用统计（Stop hook 自动记录；--backfill 回填历史 transcript）")
+    pss.add_argument("--backfill", action="store_true",
+                     help="先扫 ~/.claude/projects 原始 transcript 回填历史（按 key 去重，可重复跑）")
+    pss.add_argument("--here", action="store_true", help="只看当前项目（cwd 匹配）")
+    pss.add_argument("--cwd", help="指定项目目录")
+    pss.add_argument("--days", type=int, help="只统计最近 N 天")
+    pss.add_argument("--by", choices=["skill", "day", "month"], default="skill",
+                     help="聚合维度（默认 skill；day/month 看时间分布）")
+    pss.add_argument("--source", choices=["tool", "slash"],
+                     help="只看某一来源：tool=模型调 Skill 工具，slash=手敲斜杠命令")
+    pss.add_argument("--all", dest="all_", action="store_true",
+                     help="包含 CC 内置命令（/clear /exit 等，默认过滤）")
+    pss.set_defaults(func=cmd_skill_stats)
+
+    pms = sub.add_parser("mcp-stats",
+                         help="MCP 工具调用统计，按 server 聚合（--backfill 回填历史）")
+    pms.add_argument("--backfill", action="store_true",
+                     help="先扫 ~/.claude/projects 原始 transcript 回填历史（按 key 去重，可重复跑）")
+    pms.set_defaults(func=cmd_mcp_stats)
+
     pp = sub.add_parser("prune", help="手动触发 FIFO 剪枝（按 timestamp 删最早，保留最新 10 条）")
     pp.add_argument("--max-size", type=int, default=None,
                     help="临时覆盖 max_db_size_mb 阈值（不写也行，默认读 config）")
@@ -906,6 +1072,8 @@ def build_parser() -> argparse.ArgumentParser:
                             help="输出当前 cwd 范围内最近 N 条 session 的完整记忆（带边界标记，给 /sess 用）")
     psess.add_argument("-n", type=int, default=1, help="取最近几个，默认 1")
     psess.add_argument("--cwd", help="覆盖默认 pwd")
+    psess.add_argument("--all", dest="all_", action="store_true",
+                       help="不限制项目，跨所有 cwd 取最近 N 个 session（与 --cwd 互斥）")
     psess.add_argument("--max-bytes", type=int, default=0,
                        help="输出字节预算上限（跨 session 累计），超出后跳过剩余 session 并提示；0=无限")
     psess.add_argument("--raw", action="store_true",
