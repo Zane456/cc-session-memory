@@ -993,6 +993,96 @@ def cmd_last_session(args: argparse.Namespace) -> int:
     return 0
 
 
+def _find_memory_by_session(sid: str) -> tuple[Path, dict[str, Any]] | None:
+    """按 session_id 精确定位记忆文件。
+    先比 frontmatter 里的完整 session_id（最稳），再回退到短 sid（文件名 *-<sid8>.md）。"""
+    short = re.sub(r"[^a-zA-Z0-9]", "", sid)[:8]
+    fallback: tuple[Path, dict[str, Any]] | None = None
+    for p in iter_memories():
+        fm = parse_frontmatter(p)
+        msid = fm.get("session_id")
+        if isinstance(msid, str) and msid == sid:
+            return p, fm
+        if short and fallback is None and isinstance(msid, str) \
+                and re.sub(r"[^a-zA-Z0-9]", "", msid)[:8] == short:
+            fallback = (p, fm)
+    if fallback:
+        return fallback
+    if short:
+        cands = sorted(memories_dir().glob(f"*-{short}.md"))
+        if cands:
+            return cands[0], parse_frontmatter(cands[0])
+    return None
+
+
+def cmd_this_session(args: argparse.Namespace) -> int:
+    """只加载"本窗口当前 session"的记忆——按 session_id 精确取，不按 timestamp 抢最新。
+    session_id 默认读环境变量 CLAUDE_CODE_SESSION_ID（CC 在 Bash 里注入的当前会话 id）；
+    也可 --session-id 显式指定。因为 /clear 不开新 session（同 id 同文件继续追加），
+    这个文件就含本窗口 clear 前后的全部历史，且永不串到旁边并行窗口的 session。"""
+    sid = (getattr(args, "session_id", None)
+           or os.environ.get("CLAUDE_CODE_SESSION_ID", "")).strip()
+    if not sid:
+        print("无法确定当前 session_id（环境变量 CLAUDE_CODE_SESSION_ID 没设置，"
+              "也没传 --session-id）。", file=sys.stderr)
+        return 2
+
+    short = re.sub(r"[^a-zA-Z0-9]", "", sid)[:8]
+    found = _find_memory_by_session(sid)
+    if not found:
+        print(f"本窗口（session {short}）还没有历史记录——"
+              f"可能这个 session 还没产生过被总结的轮次。")
+        print("想看本项目最近一次会话，改用 /sess。")
+        return 1
+
+    p, fm = found
+    line = "=" * 40
+    write, state = _make_byte_budget(args.max_bytes)
+    if args.max_bytes > 0:
+        write(f"# 预算: --max-bytes {args.max_bytes}")
+
+    # --raw：绕过摘要，直接读本 session 的 CC 原始 jsonl
+    if getattr(args, "raw", False):
+        write(f"# 模式: --raw（绕过 LLM 摘要，直接读 CC 原始 jsonl）")
+        _render_session_raw(
+            fm, p, write, state, query=None,
+            include_tool_results=bool(getattr(args, "include_tool_results", False)),
+        )
+        return 0
+
+    ts_disp = fm.get("timestamp", "")
+    ts_disp = ts_disp.split("+")[0].replace("T", " ") if isinstance(ts_disp, str) else "?"
+    model = fm.get("model", "?") if isinstance(fm.get("model"), str) else "?"
+    turns = "?"
+    for k in ("turns_recorded", "turns"):
+        v = fm.get(k)
+        if isinstance(v, str) and v:
+            turns = v
+            break
+
+    write(line)
+    write(f"📌 本窗口当前 Session 的历史（按 session_id 精确定位，不串旁边窗口）")
+    write(line)
+    write(f"Session ID: {sid}")
+    write(f"时间: {ts_disp}")
+    write(f"模型: {model}")
+    write(f"总轮数: {turns}")
+    write()
+    write("【完整记忆内容如下】")
+    write()
+    write(p.read_text(encoding="utf-8").rstrip())
+    write()
+    write(line)
+    write("✅ 以上是本窗口这个 session 自己的历史记录（仅作背景参考）")
+    write("（含 /clear 之前的轮次——clear 不换 session，同一文件持续追加）")
+    write(line)
+    if state["exceeded"]:
+        write()
+        write(f"⚠️  已达 --max-bytes {args.max_bytes} 预算（内容被截断，"
+              f"想看全部就加大 --max-bytes）")
+    return 0
+
+
 def cmd_latest(args: argparse.Namespace) -> int:
     items = list(iter_memories())
     if not items:
@@ -1081,6 +1171,17 @@ def build_parser() -> argparse.ArgumentParser:
     psess.add_argument("--include-tool-results", action="store_true",
                        help="raw 模式下连工具调用结果也打出来（默认只显示 user/assistant 文本+工具名）")
     psess.set_defaults(func=cmd_last_session)
+
+    pts = sub.add_parser("this-session",
+                         help="只加载本窗口当前 session 的记忆（按 CLAUDE_CODE_SESSION_ID 精确定位，不串并行窗口；给 /sessme 用）")
+    pts.add_argument("--session-id", help="显式指定 session_id（默认读环境变量 CLAUDE_CODE_SESSION_ID）")
+    pts.add_argument("--max-bytes", type=int, default=0,
+                     help="输出字节预算上限，超出后截断并提示；0=无限")
+    pts.add_argument("--raw", action="store_true",
+                     help="绕过 LLM 摘要，直接读 CC 写在 ~/.claude/projects/ 的原始 jsonl 对话")
+    pts.add_argument("--include-tool-results", action="store_true",
+                     help="raw 模式下连工具调用结果也打出来")
+    pts.set_defaults(func=cmd_this_session)
 
     pf = sub.add_parser("find",
                         help="按关键词搜索并打出命中 session 的完整记忆（默认当前 cwd 范围；--all 全局）")

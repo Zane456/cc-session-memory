@@ -141,7 +141,7 @@ Then paste into Claude Code:
 
 > Please install cc-memory following section 3 of `INSTALL.md` in this repo. I'll use global mode (`--global`). Report each step and stop to ask if anything is unexpected.
 
-That's it — Claude Code configures the hook, the config, and the `/sess`, `/ccskill`, `/ccmcp` skills itself. The manual path and the full [provider matrix](INSTALL.md#provider-矩阵) (OpenAI / Anthropic / DeepSeek / Ollama / …) live in [INSTALL.md](INSTALL.md).
+That's it — Claude Code configures the hook, the config, and the `/sess`, `/sessme`, `/ccskill`, `/ccmcp` skills itself. The manual path and the full [provider matrix](INSTALL.md#provider-矩阵) (OpenAI / Anthropic / DeepSeek / Ollama / …) live in [INSTALL.md](INSTALL.md).
 
 Switching providers later is one sentence in Claude Code: *"change my cc-memory config to deepseek."*
 
@@ -154,6 +154,7 @@ Switching providers later is one sentence in Claude Code: *"change my cc-memory 
 | `/sess` | last session in this project, summarized |
 | `/sess <keyword>` | search this project's memories |
 | `/sess all 3` | last 3 sessions across all projects |
+| `/sessme` | **this window's own session only** — pinned by session id, never bleeds in a parallel window's memory (handy after `/clear`) |
 | *"what was the exact wording last time?"* | sess auto-switches to `--raw` and reads the original transcript |
 | `/ccskill` | every skill you ever called: count, first, last, project spread |
 | `/ccmcp` | same for MCP servers, with per-server top tools |
@@ -188,7 +189,7 @@ cc-project-memory/
 │   ├── skill_usage.py               # shared skill/MCP call extraction (132 lines)
 │   ├── cli/ccmem.py                 # retrieval + stats CLI
 │   └── bin/prune_cc_transcripts.py  # cap ~/.claude/projects growth
-├── skills/                          # /sess · /ccskill · /ccmcp templates
+├── skills/                          # /sess · /sessme · /ccskill · /ccmcp templates
 ├── memories/                        # your summaries (gitignored)
 └── docs/images/
 ```

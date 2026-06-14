@@ -32,5 +32,6 @@ sed "s|$REPO|<CC_MEMORY_REPO>|g" \
 ## 当前内容
 
 - `sess/SKILL.md` — `/sess` 历史会话检索 skill。两层数据：cc-memory GLM 摘要 + CC 原始 jsonl。`--raw` 模式直接读 `~/.claude/projects/<sid>.jsonl` 拿原话。
+- `sessme/SKILL.md` — `/sessme` 只加载本窗口当前 session 的历史。按环境变量 `CLAUDE_CODE_SESSION_ID` 精确定位记忆文件，多窗口并行时不串到旁边窗口；`/clear` 不换 session，所以含 clear 前后全部轮次。
 - `ccskill/SKILL.md` — `/ccskill` skill 使用统计（单命令，输出全部记录时间范围的调用排行）。
 - `ccmcp/SKILL.md` — `/ccmcp` MCP 使用统计（单命令，按 server 排行 + top tools）。
