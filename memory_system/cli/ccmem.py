@@ -1083,6 +1083,89 @@ def cmd_this_session(args: argparse.Namespace) -> int:
     return 0
 
 
+def _first_user_question(path: Path) -> str:
+    """抓记忆正文里第一个 `**用户**：` 行（轮次 1 的首条用户消息），截断到 60 字。
+    给 /sessme 的 recent 菜单当辨认标签用。抓不到回退占位符。"""
+    try:
+        text = path.read_text(encoding="utf-8")
+    except Exception:
+        return "(无法读取)"
+    m = re.search(r"\*\*用户\*\*[：:]\s*(.+)", text)
+    if not m:
+        return "(无首条问题)"
+    q = m.group(1).strip().split("\n")[0].strip()
+    if len(q) > 60:
+        q = q[:59] + "…"
+    return q or "(空问题)"
+
+
+def cmd_recent(args: argparse.Namespace) -> int:
+    """列出最近 N 个 session 的紧凑菜单：[编号] 时间 · 轮数 · 首条用户问题。
+    只出标题行（不倒正文），末尾附 [编号]→session_id 映射。
+    给 /sessme 的"先弹菜单 → 用户选编号 → this-session --session-id 展开"两步交互用。
+    默认当前项目范围；--all 全局。"""
+    target = None if getattr(args, "all_", False) else _normalize_path(args.cwd or os.getcwd())
+    pairs: list[tuple[Path, dict[str, Any]]] = []
+    for p in iter_memories():
+        fm = parse_frontmatter(p)
+        if target is None:
+            pairs.append((p, fm))
+            continue
+        mc = fm.get("cwd")
+        if isinstance(mc, str) and _cwd_matches(mc, target):
+            pairs.append((p, fm))
+
+    if not pairs:
+        if target is None:
+            print("（cc-memory 还没有任何 session 记录）")
+        else:
+            print("该项目目录下还没有历史 session 记录（首次在这里用 cc-memory？）。")
+        return 0
+
+    # 按 timestamp 降序（与 last-session 一致）
+    def _ts_key(item: tuple[Path, dict[str, Any]]) -> str:
+        fm = item[1]
+        v = fm.get("timestamp")
+        if isinstance(v, str) and v:
+            return v
+        d = fm.get("date")
+        return d if isinstance(d, str) else ""
+    pairs.sort(key=_ts_key, reverse=True)
+
+    n = max(1, args.n)
+    pairs = pairs[:n]
+
+    scope = "全局，跨所有项目" if target is None else f"项目：{Path(target).name}"
+    print(f"recent: 最近 {len(pairs)} 个 session（{scope}）")
+    print()
+    rows: list[tuple[int, str, str, str]] = []
+    for i, (p, fm) in enumerate(pairs, 1):
+        ts = fm.get("timestamp", "")
+        ts_disp = "?"
+        if isinstance(ts, str) and "T" in ts:
+            dpart, _, tpart = ts.partition("T")
+            ts_disp = f"{dpart[5:]} {tpart[:5]}"  # MM-DD HH:MM
+        turns = "?"
+        for k in ("turns_recorded", "turns"):
+            v = fm.get(k)
+            if isinstance(v, str) and v:
+                turns = v
+                break
+        q = _first_user_question(p)
+        sid = fm.get("session_id", "?")
+        sid = sid if isinstance(sid, str) else "?"
+        rows.append((i, ts_disp, turns, sid))
+        print(f"  [{i}] {ts_disp} · {turns}轮 · {q}")
+
+    print()
+    print(f"→ 回复编号 1-{len(rows)} 打开对应 session 的完整记忆。")
+    print()
+    print("[sid map]")
+    for i, _, _, sid in rows:
+        print(f"{i}: {sid}")
+    return 0
+
+
 def cmd_latest(args: argparse.Namespace) -> int:
     items = list(iter_memories())
     if not items:
@@ -1182,6 +1265,14 @@ def build_parser() -> argparse.ArgumentParser:
     pts.add_argument("--include-tool-results", action="store_true",
                      help="raw 模式下连工具调用结果也打出来")
     pts.set_defaults(func=cmd_this_session)
+
+    prec = sub.add_parser("recent",
+                          help="列出最近 N 个 session 的紧凑菜单（编号+时间+轮数+首条问题+sid 映射），给 /sessme 先选后开用")
+    prec.add_argument("-n", type=int, default=5, help="列最近几个，默认 5")
+    prec.add_argument("--cwd", help="覆盖默认 pwd")
+    prec.add_argument("--all", dest="all_", action="store_true",
+                      help="全局，跨所有项目（与 --cwd 互斥）")
+    prec.set_defaults(func=cmd_recent)
 
     pf = sub.add_parser("find",
                         help="按关键词搜索并打出命中 session 的完整记忆（默认当前 cwd 范围；--all 全局）")
