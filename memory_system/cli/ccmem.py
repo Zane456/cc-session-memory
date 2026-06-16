@@ -1083,20 +1083,50 @@ def cmd_this_session(args: argparse.Namespace) -> int:
     return 0
 
 
-def _first_user_question(path: Path) -> str:
-    """抓记忆正文里第一个 `**用户**：` 行（轮次 1 的首条用户消息），截断到 60 字。
-    给 /sessme 的 recent 菜单当辨认标签用。抓不到回退占位符。"""
+def _session_label(path: Path) -> tuple[str, str]:
+    """给 /sessme 的 recent 菜单当辨认标签用，返回 (末轮问题, 整体高频词)。
+
+    认出一个 session 主要靠两点：① 最后聊到哪了（末轮，优先级最高，最像"上次停在哪"）；
+    ② 整段大致在搞什么（整体主题）。首条问题反而最弱，故不再单用首条。
+
+    - 末轮：取最后一个 `**用户**：` 行，截断到 60 字。
+    - 整体：统计全文所有 `**关键词**：` 行里的词频，出现 ≥2 次的高频词按频次降序取前 5；
+      若无重复词（如单轮 session），回退取末轮所在块的关键词前 5；再不行给空串。
+    抓不到回退占位符。"""
     try:
         text = path.read_text(encoding="utf-8")
     except Exception:
-        return "(无法读取)"
-    m = re.search(r"\*\*用户\*\*[：:]\s*(.+)", text)
-    if not m:
-        return "(无首条问题)"
-    q = m.group(1).strip().split("\n")[0].strip()
-    if len(q) > 60:
-        q = q[:59] + "…"
-    return q or "(空问题)"
+        return ("(无法读取)", "")
+
+    users = re.findall(r"\*\*用户\*\*[：:]\s*(.+)", text)
+    if users:
+        last_q = users[-1].strip().split("\n")[0].strip()
+        if len(last_q) > 60:
+            last_q = last_q[:59] + "…"
+        last_q = last_q or "(空问题)"
+    else:
+        last_q = "(无对话)"
+
+    # 整体高频词：跨所有轮次的关键词行统计词频
+    kw_lines = re.findall(r"\*\*关键词\*\*[：:]\s*(.+)", text)
+    from collections import Counter
+    counter: Counter[str] = Counter()
+    per_line: list[list[str]] = []
+    for line in kw_lines:
+        toks = [t.strip() for t in re.split(r"[,，、]", line.strip().split("\n")[0]) if t.strip()]
+        per_line.append(toks)
+        for t in toks:
+            counter[t] += 1
+    repeated = [w for w, c in counter.most_common() if c >= 2]
+    if repeated:
+        overall = "、".join(repeated[:5])
+    elif per_line:
+        # 无重复词（多为单轮）→ 取末轮块的关键词前 5
+        overall = "、".join(per_line[-1][:5])
+    else:
+        overall = ""
+
+    return (last_q, overall)
 
 
 def cmd_recent(args: argparse.Namespace) -> int:
@@ -1151,11 +1181,14 @@ def cmd_recent(args: argparse.Namespace) -> int:
             if isinstance(v, str) and v:
                 turns = v
                 break
-        q = _first_user_question(p)
+        last_q, overall = _session_label(p)
         sid = fm.get("session_id", "?")
         sid = sid if isinstance(sid, str) else "?"
         rows.append((i, ts_disp, turns, sid))
-        print(f"  [{i}] {ts_disp} · {turns}轮 · {q}")
+        print(f"  [{i}] {ts_disp} · {turns}轮")
+        print(f"      末: {last_q}")
+        if overall:
+            print(f"      概: {overall}")
 
     print()
     print(f"→ 回复编号 1-{len(rows)} 打开对应 session 的完整记忆。")
