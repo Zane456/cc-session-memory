@@ -1162,11 +1162,34 @@ def cmd_recent(args: argparse.Namespace) -> int:
         return d if isinstance(d, str) else ""
     pairs.sort(key=_ts_key, reverse=True)
 
+    # 只保留 >1 轮的 session：单轮对话抠不出有意义的「上次干到一半的活」，
+    # 进菜单也白占名额。轮数解析不出来（"?"）的保守保留，宁可多给不可漏。
+    def _turns_int(fm: dict[str, Any]) -> int | None:
+        for k in ("turns_recorded", "turns"):
+            v = fm.get(k)
+            if isinstance(v, str) and v.strip().isdigit():
+                return int(v.strip())
+            if isinstance(v, int):
+                return v
+        return None
+
+    multi = [it for it in pairs if (_turns_int(it[1]) or 2) > 1]
+    dropped = len(pairs) - len(multi)
+    pairs = multi
+
+    if not pairs:
+        if target is None:
+            print("（cc-memory 里最近的 session 都只有 1 轮，没有可续接的多轮会话）")
+        else:
+            print("该项目最近的 session 都只有 1 轮，没有可续接的多轮会话。")
+        return 0
+
     n = max(1, args.n)
     pairs = pairs[:n]
 
     scope = "全局，跨所有项目" if target is None else f"项目：{Path(target).name}"
-    print(f"recent: 最近 {len(pairs)} 个 session（{scope}）")
+    skip_note = f"，已跳过 {dropped} 个单轮" if dropped else ""
+    print(f"recent: 最近 {len(pairs)} 个 session（{scope}{skip_note}）")
     print()
     rows: list[tuple[int, str, str, str]] = []
     for i, (p, fm) in enumerate(pairs, 1):
