@@ -19,8 +19,8 @@
 - 准备一个 LLM provider 的 API key（任选一家，对应的 endpoint/model 见下面 [Provider 矩阵](#provider-矩阵)）
 
 ```bash
-git clone https://github.com/Zane456/cc-project-memory.git
-cd cc-project-memory
+git clone https://github.com/Zane456/cc-session-memory.git
+cd cc-session-memory
 claude
 ```
 
@@ -41,8 +41,8 @@ Claude 会自己跑 `setup.sh --global --key <你的 key>`、按你说的 provid
 ## 方式 B：手动装
 
 ```bash
-git clone https://github.com/Zane456/cc-project-memory.git
-cd cc-project-memory
+git clone https://github.com/Zane456/cc-session-memory.git
+cd cc-session-memory
 ./memory_system/bin/setup.sh --global --key <你的-LLM-api-key>
 ```
 
@@ -195,7 +195,7 @@ cc-memory 调 LLM 走 **OpenAI Chat Completions** 或 **Anthropic Messages** 协
 最省事的路径：
 
 ```bash
-cd /path/to/cc-project-memory
+cd /path/to/cc-session-memory
 claude
 ```
 

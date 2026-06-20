@@ -131,8 +131,8 @@ graph LR
 ## 安装
 
 ```bash
-git clone https://github.com/Zane456/cc-project-memory.git
-cd cc-project-memory
+git clone https://github.com/Zane456/cc-session-memory.git
+cd cc-session-memory
 claude
 ```
 
@@ -180,7 +180,7 @@ python3 memory_system/cli/ccmem.py mcp-stats               # MCP 排行
 ## 仓库结构
 
 ```
-cc-project-memory/
+cc-session-memory/
 ├── INSTALL.md                       # 安装指南（从这里开始）
 ├── memory_system/
 │   ├── hooks/session_end.sh         # 10 ms 拆离器

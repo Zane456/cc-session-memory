@@ -132,8 +132,8 @@ Reading is a separate, explicit path: `/sess` for memories, `/ccskill` / `/ccmcp
 ## Up and Running
 
 ```bash
-git clone https://github.com/Zane456/cc-project-memory.git
-cd cc-project-memory
+git clone https://github.com/Zane456/cc-session-memory.git
+cd cc-session-memory
 claude
 ```
 
@@ -181,7 +181,7 @@ python3 memory_system/cli/ccmem.py mcp-stats               # MCP league table
 ## Repository Layout
 
 ```
-cc-project-memory/
+cc-session-memory/
 ├── INSTALL.md                       # install guide (start here)
 ├── memory_system/
 │   ├── hooks/session_end.sh         # 10 ms detacher

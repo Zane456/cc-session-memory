@@ -62,7 +62,7 @@
 ## 2. 文件结构
 
 ```
-/path/to/cc-project-memory/        # repo 根目录（举例）
+/path/to/cc-session-memory/        # repo 根目录（举例）
 ├── .claude/
 │   ├── settings.json              # Claude Code 项目级 hook 配置
 │   └── commands/
@@ -201,13 +201,13 @@ date: 2026-05-09
 start_time: 03:57:16          # 首次创建时刻（不变）
 last_update: 03:57:18         # 每轮 append 时刷新
 timestamp: 2026-05-09T03:57:18+00:00
-cwd: /path/to/cc-project-memory
+cwd: /path/to/cc-session-memory
 model: glm-5-turbo
 turns_recorded: 3             # 累计写入的轮次数（每 append +1）
 total_tokens: 1230            # 累计 GLM 消耗（每轮加）
 ---
 
-# 会话记录 · 2026-05-09（CC project memory）
+# 会话记录 · 2026-05-09（CC Session Memory）
 
 ## 轮次 1 · 03:57:16
 **用户**：想做 帮我给 utils.py 加 logging 模块的初始化
@@ -298,7 +298,7 @@ frontmatter 让 grep / 脚本检索都很方便，正文极短让人眼一眼看
 | **GLM Endpoint** | `https://api.z.ai/api/anthropic/v1/messages`（z.ai Anthropic Messages 兼容；该账号在 OpenAI-compat 端点没资源包，会 1113） |
 | **GLM 模型** | `glm-5-turbo`（次选 `glm-5.1` / `glm-5`） |
 | **触发 hook** | Stop（每轮 append；hook 配在 `~/.claude/settings.json` 全局，所有项目通吃） |
-| **memories 是否进 git** | `memories/` 是独立 git 仓 → `Zane456/cc-project-memory` (private)；launchd `com.cc-memory.daily-push` 每天 22:00 push |
+| **memories 是否进 git** | `memories/` 是独立 git 仓 → `Zane456/my-project-memory` (private)；launchd `com.cc-memory.daily-push` 每天 22:00 push |
 | **slash 命令** | `~/.claude/commands/{sess,recall}.md` 全局生效 |
 | **失败隔离** | GLM 调用失败的错误段写到 `~/.config/cc-memory/failures/`，不进 memories/，不会被推到 GitHub |
 | **配置文件** | `~/.config/cc-memory/config.json` (chmod 600) |

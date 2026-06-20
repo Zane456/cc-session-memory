@@ -9,7 +9,7 @@ Claude Code 实际加载位置：`~/.claude/skills/<skill-name>/SKILL.md`，repo
 把任一 skill 复制到 Claude Code 的 skills 目录，然后把 `<CC_MEMORY_REPO>` 占位符替换为本 repo 在你机器上的绝对路径：
 
 ```bash
-REPO="$(pwd)"                                     # 在 cc-project-memory repo 根目录跑
+REPO="$(pwd)"                                     # 在 cc-session-memory repo 根目录跑
 mkdir -p ~/.claude/skills/sess
 sed "s|<CC_MEMORY_REPO>|$REPO|g" \
     skills/sess/SKILL.md > ~/.claude/skills/sess/SKILL.md
