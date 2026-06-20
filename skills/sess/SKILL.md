@@ -1,12 +1,12 @@
 ---
 name: sess
-description: 检索 cc-memory 历史会话内容。无参数时加载当前项目上一次 session 的 GLM 摘要全文；带关键词时搜命中 session（默认当前项目，明示"全局/所有项目/all"时跨项目）；用户要"原话/具体说了什么/详情/原文/具体怎么做的"时走 `--raw` 模式直接读 CC 原始 jsonl。触发：用户问"上次怎么解决的 X"、"之前那个 Y 任务"、"加载上个 session"、"原话是什么"、"具体细节"。
+description: 检索 cc-session-memory 历史会话内容。无参数时加载当前项目上一次 session 的 GLM 摘要全文；带关键词时搜命中 session（默认当前项目，明示"全局/所有项目/all"时跨项目）；用户要"原话/具体说了什么/详情/原文/具体怎么做的"时走 `--raw` 模式直接读 CC 原始 jsonl。触发：用户问"上次怎么解决的 X"、"之前那个 Y 任务"、"加载上个 session"、"原话是什么"、"具体细节"。
 ---
 
 # /sess — 会话记忆加载与搜索
 
 两层数据：
-- **GLM 摘要**：cc-memory 每轮压缩到 `<CC_MEMORY_REPO>/memories/`，每条 ~300 字、有 frontmatter，给"读了就懂大概"用。
+- **GLM 摘要**：cc-session-memory 每轮压缩到 `<CC_MEMORY_REPO>/memories/`，每条 ~300 字、有 frontmatter，给"读了就懂大概"用。
 - **CC 原始 jsonl**：Claude Code 自己写在 `~/.claude/projects/<encoded-cwd>/<session-uuid>.jsonl`，是**完整对话原文**——用户原话、Claude 原话、所有工具调用都在里头。摘要丢失的细节去这里找。
 
 ## 派发规则（按用户输入决定调哪条命令）
@@ -48,7 +48,7 @@ GLM 摘要是有损压缩。**默认先看摘要**，符合下列任一才升级
 - 用户明确给出预算（"只用 5K tokens"）→ 按用户给的来（1 token ≈ 4 bytes 估算）
 - 输出尾部提示 `⚠️ 已达 --max-bytes 预算` → 跟用户说"还有 X 条/段被省略了，要不要加大预算或换关键词"
 
-**为什么这样设**：cc-memory 是纯关键词检索，命中范围不可控；不设上限会把无关轮次（"今天天气好"那种闲聊）一起塞进 context，稀释信号。section-only 几乎总是对的，因为既然你搜了关键词，你要的就是关键词附近的内容。
+**为什么这样设**：cc-session-memory 是纯关键词检索，命中范围不可控；不设上限会把无关轮次（"今天天气好"那种闲聊）一起塞进 context，稀释信号。section-only 几乎总是对的，因为既然你搜了关键词，你要的就是关键词附近的内容。
 
 **raw 模式预算**：raw 输出可能比摘要大 10-50 倍。`--raw` 配 `find` 默认就要 `-n 1`（先看一条）+ `--max-bytes 32000`；`--raw` 配 `last-session` 默认 `--max-bytes 64000`。预算溢出时 CLI 会提示，再问用户要不要扩。
 

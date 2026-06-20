@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""cc-memory CLI · 检索本地会话记忆
+"""cc-session-memory CLI · 检索本地会话记忆
 
 用法：
   ccmem list                       列最近 20 条
@@ -21,7 +21,7 @@ cwd 匹配规则（用于 here / --here / find / last-session）：
 
 环境变量：
   CC_MEMORY_DIR     覆盖 memories 目录
-  CC_MEMORY_CONFIG  覆盖配置文件路径
+  CC_SESSION_MEMORY_CONFIG  覆盖配置文件路径
 """
 
 from __future__ import annotations
@@ -37,7 +37,7 @@ from typing import Any, Iterable
 
 
 def _load_config() -> dict:
-    cfg_path = Path(os.environ.get("CC_MEMORY_CONFIG", str(Path.home() / ".config" / "cc-memory" / "config.json")))
+    cfg_path = Path(os.environ.get("CC_SESSION_MEMORY_CONFIG", str(Path.home() / ".config" / "cc-session-memory" / "config.json")))
     if cfg_path.exists():
         try:
             return json.loads(cfg_path.read_text(encoding="utf-8"))
@@ -887,9 +887,9 @@ def cmd_last_session(args: argparse.Namespace) -> int:
 
     if not pairs:
         if target is None:
-            print("（cc-memory 还没有任何 session 记录）")
+            print("（cc-session-memory 还没有任何 session 记录）")
         else:
-            print("该项目目录下还没有历史 session 记录（首次在这里使用 cc-memory？）。")
+            print("该项目目录下还没有历史 session 记录（首次在这里使用 cc-session-memory？）。")
         return 0
 
     # 按 timestamp 降序
@@ -1147,9 +1147,9 @@ def cmd_recent(args: argparse.Namespace) -> int:
 
     if not pairs:
         if target is None:
-            print("（cc-memory 还没有任何 session 记录）")
+            print("（cc-session-memory 还没有任何 session 记录）")
         else:
-            print("该项目目录下还没有历史 session 记录（首次在这里用 cc-memory？）。")
+            print("该项目目录下还没有历史 session 记录（首次在这里用 cc-session-memory？）。")
         return 0
 
     # 按 timestamp 降序（与 last-session 一致）
@@ -1179,7 +1179,7 @@ def cmd_recent(args: argparse.Namespace) -> int:
 
     if not pairs:
         if target is None:
-            print("（cc-memory 里最近的 session 都只有 1 轮，没有可续接的多轮会话）")
+            print("（cc-session-memory 里最近的 session 都只有 1 轮，没有可续接的多轮会话）")
         else:
             print("该项目最近的 session 都只有 1 轮，没有可续接的多轮会话。")
         return 0
@@ -1236,7 +1236,7 @@ def cmd_latest(args: argparse.Namespace) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="ccmem", description="cc-memory CLI · 本地会话记忆检索")
+    p = argparse.ArgumentParser(prog="ccmem", description="cc-session-memory CLI · 本地会话记忆检索")
     sub = p.add_subparsers(dest="cmd", required=True)
 
     pl = sub.add_parser("list", help="列出记忆（全局）")

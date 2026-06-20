@@ -1,4 +1,4 @@
-# cc-memory · 设计方案
+# CC Session Memory · 设计方案
 
 > ⚠️ **历史快照**：本文档是 v0.1 的设计稿，保留作为方案演进存档。**两处已与当前实现脱节**：
 > 1. 不再提供 `/recall` slash 命令——能力被 `ccmem find` / `/sess` 吸收
@@ -83,8 +83,8 @@
 └── README.md                       # 顶层说明
 ```
 
-**配置文件位置**：`~/.config/cc-memory/config.json`（用户私有，不进 repo）。  
-**日志位置**：`~/.config/cc-memory/logs/run-<timestamp>.log`。
+**配置文件位置**：`~/.config/cc-session-memory/config.json`（用户私有，不进 repo）。  
+**日志位置**：`~/.config/cc-session-memory/logs/run-<timestamp>.log`。
 
 ---
 
@@ -127,7 +127,7 @@ HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TMP="$(mktemp -t ccmem-payload.XXXXXX)"
 cat > "$TMP"
 
-LOG_DIR="$HOME/.config/cc-memory/logs"
+LOG_DIR="$HOME/.config/cc-session-memory/logs"
 mkdir -p "$LOG_DIR"
 LOG="$LOG_DIR/run-$(date +%Y%m%d-%H%M%S).log"
 
@@ -272,7 +272,7 @@ frontmatter 让 grep / 脚本检索都很方便，正文极短让人眼一眼看
 
 ## 6. 安全 & 隐私
 
-- API key **不入 repo**：存 `~/.config/cc-memory/config.json`，权限 `chmod 600`
+- API key **不入 repo**：存 `~/.config/cc-session-memory/config.json`，权限 `chmod 600`
 - `.gitignore` 忽略 `logs/`、`*.log`、`config.json`、`memories/*.md`（根据用户偏好可改）
 - transcript 内容只发给 GLM 一次，不持久化原文
 
@@ -298,7 +298,7 @@ frontmatter 让 grep / 脚本检索都很方便，正文极短让人眼一眼看
 | **GLM Endpoint** | `https://api.z.ai/api/anthropic/v1/messages`（z.ai Anthropic Messages 兼容；该账号在 OpenAI-compat 端点没资源包，会 1113） |
 | **GLM 模型** | `glm-5-turbo`（次选 `glm-5.1` / `glm-5`） |
 | **触发 hook** | Stop（每轮 append；hook 配在 `~/.claude/settings.json` 全局，所有项目通吃） |
-| **memories 是否进 git** | `memories/` 是独立 git 仓 → `Zane456/my-project-memory` (private)；launchd `com.cc-memory.daily-push` 每天 22:00 push |
+| **memories 是否进 git** | `memories/` 是独立 git 仓 → `Zane456/my-project-memory` (private)；launchd `com.cc-session-memory.daily-push` 每天 22:00 push |
 | **slash 命令** | `~/.claude/commands/{sess,recall}.md` 全局生效 |
-| **失败隔离** | GLM 调用失败的错误段写到 `~/.config/cc-memory/failures/`，不进 memories/，不会被推到 GitHub |
-| **配置文件** | `~/.config/cc-memory/config.json` (chmod 600) |
+| **失败隔离** | GLM 调用失败的错误段写到 `~/.config/cc-session-memory/failures/`，不进 memories/，不会被推到 GitHub |
+| **配置文件** | `~/.config/cc-session-memory/config.json` (chmod 600) |

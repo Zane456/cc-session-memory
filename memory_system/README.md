@@ -1,12 +1,12 @@
 # memory_system/
 
-cc-memory 的全部代码与配置都在这里。三个模块：
+cc-session-memory 的全部代码与配置都在这里。三个模块：
 
 ```
 hooks/        Claude Code SessionEnd hook 的实现
 cli/          手动检索的 Python CLI
 bin/          一次性安装脚本
-config/       配置模板（真配置在 ~/.config/cc-memory/config.json）
+config/       配置模板（真配置在 ~/.config/cc-session-memory/config.json）
 ```
 
 ## hooks/
@@ -20,7 +20,7 @@ config/       配置模板（真配置在 ~/.config/cc-memory/config.json）
 ### `summarize.py`
 - 读 payload tmp 文件 → 解析 → 删除
 - 读 `transcript_path` 指向的 JSONL，抽出 user/assistant 文本（丢工具调用，省 token）
-- 加载 `~/.config/cc-memory/config.json`（或 `$CC_MEMORY_CONFIG`）
+- 加载 `~/.config/cc-session-memory/config.json`（或 `$CC_MEMORY_CONFIG`）
 - POST z.ai chat-completions（OpenAI 兼容格式）
 - 把总结写成 `memories/YYYY-MM-DD-<sid8>.md`，含 frontmatter
 - 失败永远不向上抛，写日志即可
@@ -49,8 +49,8 @@ ZAI_API_KEY=xxx ./setup.sh
 ```
 
 会做三件事：
-1. 创建 `~/.config/cc-memory/config.json`，把 api_key 填进去，`chmod 600`
-2. 创建 `~/.config/cc-memory/logs/`
+1. 创建 `~/.config/cc-session-memory/config.json`，把 api_key 填进去，`chmod 600`
+2. 创建 `~/.config/cc-session-memory/logs/`
 3. 给 hooks/cli 设可执行位
 
 ## config/config.example.json
@@ -75,7 +75,7 @@ ZAI_API_KEY=xxx ./setup.sh
 
 | 变量 | 作用 |
 |---|---|
-| `CC_MEMORY_HOME` | 改默认 `~/.config/cc-memory` |
+| `CC_MEMORY_HOME` | 改默认 `~/.config/cc-session-memory` |
 | `CC_MEMORY_CONFIG` | 直接指定 config.json 路径（测试用） |
 | `CC_MEMORY_DIR` | 改默认 memories 目录（CLI 用） |
 | `CC_MEMORY_PYTHON` | 改 python 解释器（默认 python3） |

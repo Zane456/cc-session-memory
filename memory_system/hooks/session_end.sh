@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# cc-memory · SessionEnd hook 拆离器
+# cc-session-memory · SessionEnd hook 拆离器
 # 任务：把 hook payload (stdin JSON) 转给 python worker，并立即返回，绝不阻塞 Claude Code。
 #
 # 拆离策略（macOS / Linux 通用）：
@@ -13,7 +13,7 @@ HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WORKER="$HOOK_DIR/summarize.py"
 
 # 配置 / 日志目录
-CONF_DIR="${CC_MEMORY_HOME:-$HOME/.config/cc-memory}"
+CONF_DIR="${CC_SESSION_MEMORY_HOME:-$HOME/.config/cc-session-memory}"
 LOG_DIR="$CONF_DIR/logs"
 mkdir -p "$LOG_DIR"
 
@@ -34,7 +34,7 @@ if [ ! -s "$TMP_PAYLOAD" ]; then
     exit 0
 fi
 
-PYTHON_BIN="${CC_MEMORY_PYTHON:-python3}"
+PYTHON_BIN="${CC_SESSION_MEMORY_PYTHON:-python3}"
 
 # 完全 detach 启动 worker（stdin 切到 /dev/null 防止悬挂）
 # setsid 在 Linux util-linux 里有，macOS 默认没有；能用就用，没有就只用 nohup

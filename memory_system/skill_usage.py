@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""cc-memory · skill 调用流水（hooks/summarize.py 与 cli/ccmem.py 共用）
+"""cc-session-memory · skill 调用流水（hooks/summarize.py 与 cli/ccmem.py 共用）
 
 数据文件：<memories_dir>/skill_usage.jsonl，一行一次调用：
   {"key": "...", "ts": "2026-06-10T14:32:01+09:00", "date": "2026-06-10",

@@ -2,10 +2,10 @@ English | [简体中文](README.zh-CN.md)
 
 <div align="center">
 
-# cc-memory
+# CC Session Memory
 
 <p align="center">
-  <img src="assets/hero-en.png" alt="cc-memory — session memory and usage analytics for Claude Code" width="640" />
+  <img src="assets/hero-en.png" alt="cc-session-memory — session memory and usage analytics for Claude Code" width="640" />
 </p>
 
 > *"Write should be automatic and cheap; read should be explicit and controlled."*
@@ -72,7 +72,7 @@ Inspired by [claude-mem](https://github.com/thedotmack/claude-mem), with two del
 
 ![Design philosophy: automatic cheap writes, explicit controlled reads](docs/images/philosophy.png)
 
-| Dimension | claude-mem | cc-memory |
+| Dimension | claude-mem | cc-session-memory |
 |---|---|---|
 | Hooks | 5 (SessionStart / UserPromptSubmit / PostToolUse / Stop / SessionEnd) | **1** (Stop, per-turn append) |
 | Crash cost | depends on SessionEnd firing | **at most the unfinished last turn** |
@@ -104,7 +104,7 @@ Inspired by [claude-mem](https://github.com/thedotmack/claude-mem), with two del
 
 ## How It Works
 
-![cc-memory architecture: Stop hook, detached Python worker, LLM summary, markdown storage](docs/images/architecture.png)
+![cc-session-memory architecture: Stop hook, detached Python worker, LLM summary, markdown storage](docs/images/architecture.png)
 
 ```mermaid
 graph LR
@@ -139,11 +139,11 @@ claude
 
 Then paste into Claude Code:
 
-> Please install cc-memory following section 3 of `INSTALL.md` in this repo. I'll use global mode (`--global`). Report each step and stop to ask if anything is unexpected.
+> Please install cc-session-memory following section 3 of `INSTALL.md` in this repo. I'll use global mode (`--global`). Report each step and stop to ask if anything is unexpected.
 
 That's it — Claude Code configures the hook, the config, and the `/sess`, `/sessme`, `/ccskill`, `/ccmcp` skills itself. The manual path and the full [provider matrix](INSTALL.md#provider-矩阵) (OpenAI / Anthropic / DeepSeek / Ollama / …) live in [INSTALL.md](INSTALL.md).
 
-Switching providers later is one sentence in Claude Code: *"change my cc-memory config to deepseek."*
+Switching providers later is one sentence in Claude Code: *"change my cc-session-memory config to deepseek."*
 
 ---
 
@@ -173,7 +173,7 @@ python3 memory_system/cli/ccmem.py mcp-stats               # MCP league table
 ## Privacy, by construction
 
 - **Memories never leave your machine.** `memories/` is gitignored; summaries and usage logs are plain local files you can read, grep, edit, or delete.
-- **Your API key never enters git** — it lives in `~/.config/cc-memory/config.json` (chmod 600), with a `.gitignore` safety net for any stray `config.json`.
+- **Your API key never enters git** — it lives in `~/.config/cc-session-memory/config.json` (chmod 600), with a `.gitignore` safety net for any stray `config.json`.
 - **Failures stay quiet** — LLM errors are quarantined to a local log; the hook always exits 0 and never breaks your Claude Code session.
 
 ---
@@ -206,7 +206,7 @@ Full architecture rationale: [DESIGN.md](DESIGN.md).
 
 <br>
 
-⭐ If cc-memory remembers something for you, consider giving it a star.
+⭐ If cc-session-memory remembers something for you, consider giving it a star.
 
 <br>
 

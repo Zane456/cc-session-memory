@@ -1,5 +1,5 @@
 {
-  "_README": "Copy to ~/.config/cc-memory/config.json, fill api_key, then chmod 600. cc-memory works with any LLM that speaks OpenAI Chat Completions or Anthropic Messages — see INSTALL.md 'Provider matrix' for ready-made endpoint/model presets.",
+  "_README": "Copy to ~/.config/cc-session-memory/config.json, fill api_key, then chmod 600. cc-session-memory works with any LLM that speaks OpenAI Chat Completions or Anthropic Messages — see INSTALL.md 'Provider matrix' for ready-made endpoint/model presets.",
 
   "api_key": "YOUR_LLM_API_KEY",
 
@@ -20,7 +20,7 @@
   "request_timeout_seconds": 60,
 
   "memories_dir": null,
-  "_memories_dir_comment": "null = 自动用 <install>/memories；也可手动设成绝对路径（比如 ~/.cc-memory/memories）。",
+  "_memories_dir_comment": "null = 自动用 <install>/memories；也可手动设成绝对路径（比如 ~/.cc-session-memory/memories）。",
 
   "transcript_truncate_chars": 60000,
   "user_text_truncate_chars": 4000,

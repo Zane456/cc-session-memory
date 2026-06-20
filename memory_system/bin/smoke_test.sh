@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# cc-memory · 真实 LLM API 烟雾测试
+# cc-session-memory · 真实 LLM API 烟雾测试
 # 验证：
-#   1) ~/.config/cc-memory/config.json 可读
+#   1) ~/.config/cc-session-memory/config.json 可读
 #   2) config 里的 endpoint 可达 + api_key 有效（无论 OpenAI / Anthropic / 兼容端点）
 #   3) hook 拆离 < 200ms
 #   4) python worker 真的能调你配置的 LLM 写出 markdown
@@ -16,7 +16,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-CONF_DIR="${CC_MEMORY_HOME:-$HOME/.config/cc-memory}"
+CONF_DIR="${CC_SESSION_MEMORY_HOME:-$HOME/.config/cc-session-memory}"
 CONF="$CONF_DIR/config.json"
 
 ISOLATED=0
@@ -49,8 +49,8 @@ cfg["memories_dir"] = mem
 json.dump(cfg, open(dst, "w"), ensure_ascii=False, indent=2)
 PY
     chmod 600 "$ISO_CONF"
-    export CC_MEMORY_HOME="$TMP"
-    export CC_MEMORY_CONFIG="$ISO_CONF"
+    export CC_SESSION_MEMORY_HOME="$TMP"
+    export CC_SESSION_MEMORY_CONFIG="$ISO_CONF"
     CONF="$ISO_CONF"
     echo "─── 0) --isolated 模式：临时目录 = $TMP ───"
 fi
@@ -99,11 +99,11 @@ echo
 echo "─── 3) 模拟 Stop hook payload，验证拆离时间 ───"
 TRANSCRIPT="$(mktemp -t ccmem-smoke-tr.XXXXXX.jsonl)"
 cat > "$TRANSCRIPT" <<'JSONL'
-{"type":"user","message":{"role":"user","content":"smoke test：解释一下什么是 cc-memory 的 Stop hook。"}}
-{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"cc-memory 的 Stop hook 在 Claude 每轮回完话时触发，会异步用配置的 LLM 总结这一轮并 append 到当 session 的 markdown 文件，全程不阻塞 Claude Code 的退出。这是真实端到端调用测试。"}]}}
+{"type":"user","message":{"role":"user","content":"smoke test：解释一下什么是 cc-session-memory 的 Stop hook。"}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"cc-session-memory 的 Stop hook 在 Claude 每轮回完话时触发，会异步用配置的 LLM 总结这一轮并 append 到当 session 的 markdown 文件，全程不阻塞 Claude Code 的退出。这是真实端到端调用测试。"}]}}
 JSONL
 
-LAST_ASSIST="cc-memory 的 Stop hook 在 Claude 每轮回完话时触发，会异步用配置的 LLM 总结这一轮并 append 到当 session 的 markdown 文件，全程不阻塞 Claude Code 的退出。这是真实端到端调用测试。"
+LAST_ASSIST="cc-session-memory 的 Stop hook 在 Claude 每轮回完话时触发，会异步用配置的 LLM 总结这一轮并 append 到当 session 的 markdown 文件，全程不阻塞 Claude Code 的退出。这是真实端到端调用测试。"
 PAYLOAD=$(python3 -c "
 import json,sys,time
 print(json.dumps({
@@ -155,7 +155,7 @@ for i in $(seq 1 60); do
 done
 
 rm -f "$TRANSCRIPT"
-LOG_DIR="${CC_MEMORY_HOME:-$HOME/.config/cc-memory}/logs"
+LOG_DIR="${CC_SESSION_MEMORY_HOME:-$HOME/.config/cc-session-memory}/logs"
 echo "  ❌ 30s 内未生成 memory 文件" >&2
 echo "  看 $LOG_DIR/worker.log 排查" >&2
 tail -30 "$LOG_DIR/worker.log" 2>/dev/null || true

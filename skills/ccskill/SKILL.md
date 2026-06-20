@@ -5,7 +5,7 @@ description: 查 skill 使用统计。单命令、无参数：固定输出目前
 
 # /ccskill — skill 使用统计（单命令）
 
-数据源：`<cc-memory>/memories/skill_usage.jsonl`，cc-memory 的 Stop hook 每轮自动记录，长期累积，不受 CC 30 天 transcript 清理影响。
+数据源：`<cc-session-memory>/memories/skill_usage.jsonl`，cc-session-memory 的 Stop hook 每轮自动记录，长期累积，不受 CC 30 天 transcript 清理影响。
 
 ## 行为（固定，无参数分支）
 

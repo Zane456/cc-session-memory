@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""cc-memory · Stop hook worker（每轮 append 架构）
+"""cc-session-memory · Stop hook worker（每轮 append 架构）
 
 每次 Claude Code 完成一轮回答 → Stop hook 触发 → 这个 worker 跑一次：
   1. 检查 stop_hook_active；为 true 直接退（防止 hook 自身再触发死循环）
@@ -41,9 +41,9 @@ except Exception:
 # 路径与默认值
 # ────────────────────────────────────────────────────────────────────────────
 
-CC_MEMORY_HOME = Path(os.environ.get("CC_MEMORY_HOME", str(Path.home() / ".config" / "cc-memory")))
-DEFAULT_CONFIG_PATH = CC_MEMORY_HOME / "config.json"
-LOG_DIR = CC_MEMORY_HOME / "logs"
+CC_SESSION_MEMORY_HOME = Path(os.environ.get("CC_SESSION_MEMORY_HOME", str(Path.home() / ".config" / "cc-session-memory")))
+DEFAULT_CONFIG_PATH = CC_SESSION_MEMORY_HOME / "config.json"
+LOG_DIR = CC_SESSION_MEMORY_HOME / "logs"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 logging.basicConfig(
@@ -54,7 +54,7 @@ logging.basicConfig(
         logging.StreamHandler(sys.stdout),
     ],
 )
-log = logging.getLogger("cc-memory")
+log = logging.getLogger("cc-session-memory")
 
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -85,7 +85,7 @@ PRUNE_TARGET_RATIO = 0.9
 
 
 def load_config() -> dict[str, Any]:
-    cfg_path = Path(os.environ.get("CC_MEMORY_CONFIG", str(DEFAULT_CONFIG_PATH)))
+    cfg_path = Path(os.environ.get("CC_SESSION_MEMORY_CONFIG", str(DEFAULT_CONFIG_PATH)))
     if not cfg_path.exists():
         raise FileNotFoundError(f"config not found at {cfg_path}; run setup.sh first")
     with cfg_path.open(encoding="utf-8") as f:
@@ -700,9 +700,9 @@ def _memories_dir(cfg: dict[str, Any]) -> Path:
 
 
 def _write_failure_note(cfg: dict[str, Any], event: dict[str, Any], err: str) -> None:
-    """LLM 调用失败写到 ~/.config/cc-memory/failures/，不污染 memories/（不会被推到 GitHub）。"""
+    """LLM 调用失败写到 ~/.config/cc-session-memory/failures/，不污染 memories/（不会被推到 GitHub）。"""
     try:
-        fail_dir = CC_MEMORY_HOME / "failures"
+        fail_dir = CC_SESSION_MEMORY_HOME / "failures"
         fail_dir.mkdir(parents=True, exist_ok=True)
         sid = _short_sid(str(event.get("session_id") or "unknown"))
         date = datetime.now().strftime("%Y-%m-%d")

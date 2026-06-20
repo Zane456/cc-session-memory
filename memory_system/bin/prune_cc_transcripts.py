@@ -2,7 +2,7 @@
 """Prune ~/.claude/projects/ transcripts to stay under a size cap.
 
 Claude Code 自己写在 ~/.claude/projects/<encoded-cwd>/<session-uuid>.jsonl 的
-完整对话日志。这个仓库里的 cc-memory 只管 memories/ 摘要，不管这些原始 transcript。
+完整对话日志。这个仓库里的 cc-session-memory 只管 memories/ 摘要，不管这些原始 transcript。
 本脚本独立做容量保护：超过 cap 时按 mtime 升序删最旧的 .jsonl，删到 cap*0.9 以下；
 保护最近 24h 内有写入的文件（视为活跃 session）。删完后清空残留空目录。
 """
