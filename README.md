@@ -106,17 +106,6 @@ Inspired by [claude-mem](https://github.com/thedotmack/claude-mem), with two del
 
 ![cc-session-memory architecture: Stop hook, detached Python worker, LLM summary, markdown storage](docs/images/architecture.png)
 
-```mermaid
-graph LR
-    A[Claude finishes a turn] --> B[Stop hook<br>~10 ms detach]
-    B --> C[Background worker]
-    C --> D[LLM of your choice<br>summarizes the turn]
-    C --> E[skill_usage.jsonl<br>skill + MCP call log]
-    D --> F[memories/DATE-session.md]
-    F --> G["/sess — explicit recall"]
-    E --> H["/ccskill · /ccmcp — usage stats"]
-```
-
 **1. Detach** — Claude finishes a turn, the Stop hook writes the event to a tmpfile, forks a detached Python worker, and returns in ~10 ms. CC never blocks.
 
 **2. Summarize** — the worker extracts the turn from CC's transcript and asks *your* LLM (any OpenAI-Chat or Anthropic-Messages endpoint) for a ~300-char summary that keeps failures and dead ends, not just the final fix.
