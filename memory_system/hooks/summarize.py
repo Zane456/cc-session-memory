@@ -402,23 +402,18 @@ def call_llm_for_turn(
 # 解析 LLM 直出的三行 → 结构化字段
 # ────────────────────────────────────────────────────────────────────────────
 
+_TURN_LINE_RE = re.compile(r"^[\*\-\s]*(用户|结果|关键词)[\*\s]*[:：]\s*(.*)$")
+_TURN_KEY_BY_ALIAS = {"用户": "user", "结果": "result", "关键词": "keywords"}
+
+
 def parse_turn_summary(s: str) -> dict[str, str]:
     """把 LLM 输出的"用户:.../结果:.../关键词:..." 三行解析成 dict。
-    LLM 偶尔会乱加 markdown 强调，宽松匹配。"""
+    LLM 偶尔会乱加 markdown 强调（**用户**：）或列表前缀（- ），宽松匹配。"""
     out = {"user": "", "result": "", "keywords": ""}
     for line in s.splitlines():
-        # 去掉前导的 *、- 等
-        line = re.sub(r"^[\*\-\s]+", "", line).strip()
-        for key, alias in (("user", "用户"), ("result", "结果"), ("keywords", "关键词")):
-            if line.startswith(alias + ":") or line.startswith(alias + "：") or \
-               line.startswith("**" + alias + "**:") or line.startswith("**" + alias + "**：") or \
-               line.lower().startswith(alias.lower() + ":"):
-                # 取冒号后内容
-                _, _, val = line.partition(":")
-                if not val:
-                    _, _, val = line.partition("：")
-                out[key] = val.strip().strip("*").strip()
-                break
+        m = _TURN_LINE_RE.match(line.strip())
+        if m:
+            out[_TURN_KEY_BY_ALIAS[m.group(1)]] = m.group(2).strip().strip("*").strip()
     return out
 
 
@@ -649,6 +644,13 @@ def enforce_size_cap(memories_dir: Path, max_mb: int, log_func: Any = None) -> d
                 "oldest_pruned": "", "kept": 0, "max_mb": max_mb}
     max_bytes = int(max_mb * 1024 * 1024)
     target_bytes = int(max_bytes * PRUNE_TARGET_RATIO)
+    # 孤儿锁（.md 已删但 sidecar .lock 还在）顺手清掉
+    for lk in memories_dir.glob("*.md.lock"):
+        if not lk.with_suffix("").exists():
+            try:
+                lk.unlink()
+            except OSError:
+                pass
     items = [p for p in memories_dir.glob("*.md") if p.is_file()]
     if not items:
         return {"pruned": 0, "freed_bytes": 0, "before_bytes": 0, "after_bytes": 0,
@@ -677,6 +679,10 @@ def enforce_size_cap(memories_dir: Path, max_mb: int, log_func: Any = None) -> d
         except OSError as e:
             log_func(f"prune: failed to delete {p}: {e}")
             continue
+        try:
+            p.with_suffix(p.suffix + ".lock").unlink()
+        except OSError:
+            pass
         if pruned == 0:
             oldest_pruned_ts = ts
         current -= sz; freed += sz; pruned += 1

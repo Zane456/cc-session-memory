@@ -109,24 +109,35 @@ def load_events(path: Path) -> list[dict[str, Any]]:
 
 
 def append_events(path: Path, events: list[dict[str, Any]]) -> int:
-    """按 key 去重后追加，返回实际写入条数。带 fcntl 排它锁。"""
+    """按 key 去重后追加，返回实际写入条数。
+    判重与写入在同一把 fcntl 排它锁内完成——实时 hook 与 --backfill 并发跑也不会重复计数。"""
     if not events:
         return 0
-    seen = {e.get("key") for e in load_events(path)}
-    fresh: list[dict[str, Any]] = []
-    for e in events:
-        k = e.get("key")
-        if k and k not in seen:
-            seen.add(k)
-            fresh.append(e)
-    if not fresh:
-        return 0
     path.parent.mkdir(parents=True, exist_ok=True)
-    payload = "".join(json.dumps(e, ensure_ascii=False) + "\n" for e in fresh)
-    with path.open("ab") as f:
+    with path.open("a+", encoding="utf-8") as f:
         fcntl.flock(f.fileno(), fcntl.LOCK_EX)
         try:
-            f.write(payload.encode("utf-8"))
+            f.seek(0)
+            seen: set[str] = set()
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    obj = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(obj, dict) and obj.get("key"):
+                    seen.add(obj["key"])
+            fresh: list[dict[str, Any]] = []
+            for e in events:
+                k = e.get("key")
+                if k and k not in seen:
+                    seen.add(k)
+                    fresh.append(e)
+            if not fresh:
+                return 0
+            f.write("".join(json.dumps(e, ensure_ascii=False) + "\n" for e in fresh))
         finally:
             fcntl.flock(f.fileno(), fcntl.LOCK_UN)
     return len(fresh)
