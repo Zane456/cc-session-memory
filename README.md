@@ -93,7 +93,8 @@ Inspired by [claude-mem](https://github.com/thedotmack/claude-mem), with two del
 | **Hook latency** | ~10 ms (worker detaches, CC never waits) |
 | **Data lost on crash / `Cmd+Q`** | at most 1 unfinished turn |
 | **pip installs** | 0 — Python stdlib only (`urllib` + `json` + `fcntl`) |
-| **Total code** | 2,230 lines — auditable in one sitting |
+| **Platform** | macOS / Linux (locking via `fcntl`; Windows not supported) |
+| **Total code** | ~2,400 lines — auditable in one sitting |
 | **Per-turn summary** | ~300 chars, written so another model can pick up where you left off |
 | **LLM providers** | 9+ (OpenAI / Anthropic / DeepSeek / OpenRouter / Together / Groq / Ollama / vLLM / Z.AI) via 2 wire protocols, auto-sniffed |
 | **Context injected per session** | 0 tokens until you ask |
@@ -123,14 +124,17 @@ Reading is a separate, explicit path: `/sess` for memories, `/ccskill` / `/ccmcp
 ```bash
 git clone https://github.com/Zane456/cc-session-memory.git
 cd cc-session-memory
+./memory_system/bin/setup.sh --global   # prompts for your API key — it lands in a chmod-600 local config
 claude
 ```
 
+> ⚠️ **Never paste your API key into the Claude Code chat.** Everything you type is stored verbatim in CC's transcripts (and would even get summarized by this very tool). `setup.sh` keeps the key on disk — outside git, outside the conversation.
+
 Then paste into Claude Code:
 
-> Please install cc-session-memory following section 3 of `INSTALL.md` in this repo. I'll use global mode (`--global`). Report each step and stop to ask if anything is unexpected.
+> setup.sh already ran with my key. Please finish installing cc-session-memory following section 3 of `INSTALL.en.md` in this repo (global mode): verify the four install targets, adjust `endpoint` / `model` / `protocol` in `~/.config/cc-session-memory/config.json` for my provider `<openai / anthropic / deepseek / ollama / …>` per the provider matrix if needed, then run the smoke test. Report each step and stop to ask if anything is unexpected.
 
-That's it — Claude Code configures the hook, the config, and the `/sess`, `/sessme`, `/ccskill`, `/ccmcp` skills itself. The manual path and the full [provider matrix](INSTALL.md#provider-矩阵) (OpenAI / Anthropic / DeepSeek / Ollama / …) live in [INSTALL.md](INSTALL.md).
+That's it — Claude Code verifies the hook, the config, and the `/sess`, `/sessme`, `/ccskill`, `/ccmcp` skills. The manual path and the full [provider matrix](INSTALL.en.md#provider-matrix) (OpenAI / Anthropic / DeepSeek / Ollama / …) live in [INSTALL.en.md](INSTALL.en.md) · [中文安装指南](INSTALL.md).
 
 Switching providers later is one sentence in Claude Code: *"change my cc-session-memory config to deepseek."*
 
@@ -171,7 +175,7 @@ python3 memory_system/cli/ccmem.py mcp-stats               # MCP league table
 
 ```
 cc-session-memory/
-├── INSTALL.md                       # install guide (start here)
+├── INSTALL.en.md · INSTALL.md       # install guide (EN · 中文 — start here)
 ├── memory_system/
 │   ├── hooks/session_end.sh         # 10 ms detacher
 │   ├── hooks/summarize.py           # background worker: summarize + log usage
